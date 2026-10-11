@@ -72,6 +72,75 @@ highs, keep the ladder of distinct pivots, and do not use the extra room to emit
 18. The window peak is usually but not always labelled (NOK 6.40 and SNAP 17.90 were not). Keep
     it, but it is the most dispensable level when it sits far above a dense staircase.
 
+## Rules added after the val relabel of 2026-10-10 (v5 fit check, val F1 1.000)
+
+The val split was re-labelled more densely and each chart now has a labeler note
+in `<split>/explainations/`.  The revised convention:
+
+19. Mark EVERY significant rejection high after the window all-time-high, not
+    just clean pivots: decline-day highs, gap-down-day highs and rebound highs
+    are each labelled, even when steps are a few cents apart (SNDL 2.17/2.20,
+    SOFI 10.10/10.28).  Walk left-and-up from the close collecting them.
+20. A labelled level can be a former support low, not only a high: the floor of
+    a shelf that broke counts (PTON 5.56 triple-touch lows, 5.37 poke low;
+    SNAP 15.52; RIVN 16.94).  Check the `low` column for multi-touch floors.
+21. Near-price levels are kept when they are real rejection points (SNAP 15.52
+    is only 1.3% above close).  The <2% drop in rule 14 is too aggressive.
+22. The last bar's own high counts when it was a violent, high-volume rejection
+    at a prior level (RIOT 18.36; labeler note: "multiple tests of resistance
+    all failed").  Otherwise still drop last-3-bar highs.
+23. "Don't consider prices before the all-time-high" - levels formed before the
+    window peak are ignored, EXCEPT highs from an earlier separate spike
+    episode (SOUN 4.95 predates the Jun peak but is labelled).
+24. High volume on the rejection day makes the level more likely to be labelled
+    (RKLB 5.76 on 52M, SNAP 17.50 on 92M, PTON 5.30 on 84M).
+
+## Rules added after the blind test run of 2026-10-10 (test F1 0.647, recall 0.833, precision 0.528)
+
+The blind run showed the same staircase is read correctly but the wrong bar is often
+picked; each of these came from a real miss:
+
+25. On a fresh pullback the first post-peak decline-day high is labelled, not the
+    window ATH: AFRM labelled 25.13 (Sep19 decline day), 23.11 (Sep12 shelf LOW),
+    22.68 (Sep7 shelf top) - while the 25.63 ATH and a 24.45 cluster midpoint were
+    both wrong. Emit the specific bar the descent started from, and check shelf lows.
+26. Do NOT merge adjacent staircase steps to a midpoint. Levels 0.10 to 1.0 apart are
+    separately labelled (BB 4.30 vs 4.62 vs 5.35, JOBY 7.93 vs 8.35, IONQ 13.95 vs
+    my 14.09, AAPL 157.03 vs my merged 158.10). Emit each exact bar; a midpoint can
+    cost both. Reinforces rule 15 - when in doubt, emit both bars.
+27. A blow-off peak day can be labelled at its body/close, not the wick: AMC's peak
+    day was labelled 5.20 (close), not the 5.56 high. For long-wick climax bars,
+    consider the close as the level.
+28. Match density to chart shape. The labeler is dense inside a post-peak descent
+    leg (RKLB 8/9 hits, JOBY 7, NOK 7) but sparse on clean V-recoveries and shallow
+    pullbacks (DNA only 3 labels, PLTR 3, NIO 2, AFRM 3). On charts that fell and
+    recovered without a long staircase, output only the few majors: the peak, the
+    recovery leg top, and maybe one mid-shelf.
+
+## Rules added after the v6 val run of 2026-10-10 (val F1 0.651, recall 0.976, precision 0.488)
+
+v6 applied rules 19/26 maximally (every decline-day high, emit both near-duplicate
+bars). Recall was near-perfect but 43 FPs: the val labeler takes 3-7 levels per
+chart, NOT every staircase step.
+
+29. "Every rejection high" means swing/rebound highs and the bars the descent
+    pivoted on, not every daily high of a down-leg. Mid-leg ordinary-volume
+    decline-day highs were unlabelled (RIVN 17.01/17.16/19.90, SOFI 9.24-9.57,
+    SNDL 2.12/2.26, RKLB 5.35/5.57, PTON 6.00/6.11/6.88/7.05 all FPs). Cut the
+    steps between major rebounds when they lack a distinct volume or gap event.
+30. Crash-day highs are NOT automatically levels: RIVN 16.35 (262M gap-down day),
+    RIOT 17.02 (71M) and SOUN 3.99 (last-bar crash open) were all unlabelled.
+    Label crash-day highs only when they sit at/near a real prior pivot.
+31. Do not emit two bars within ~$0.10 of each other as insurance: RIVN 16.84/16.86,
+    RIVN 18.855/18.865, PTON 5.26/5.30, SNDL 2.26/2.27 each produced a wasted FP
+    (the labeler picked one bar). Pick the single best bar per zone - the highest
+    of a shelf or the most violent rejection - rule 26's "emit both" applies to
+    levels >$0.10-0.15 apart, not to near-identical prices.
+32. The window ATH is usually labelled after all on val (SNAP label at 17.86 vs
+    my omitted 17.90 was the only FN); keep the top unless it is clearly a lone
+    spike never retested. Former-support lows stay valid (PTON 5.37/5.56,
+    RIVN 16.94, SNAP 15.52 all hit).
+
 ## Procedure
 1. Read the PNG. Note the last close, the major peaks, shelves, gap-down ladders and spikes.
 2. Read the CSV. For each candidate zone, find the exact high (and date) and confirm it is above

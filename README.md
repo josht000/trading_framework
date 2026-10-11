@@ -11,29 +11,60 @@ A Python-based automated trading framework for backtesting, simulating, and live
 - **Strategy Implementation**: Humbled Trader Bullish Overnight strategy
 - **Backtesting**: Vectorbt-based backtesting engine for fast strategy evaluation
 - **Multi-Symbol Support**: Backtest multiple symbols simultaneously
+- **Resistance Research**: Interactive detector tooling (`research_resistance.py`), a hand-labeled chart dataset (`data/resistance_dataset/`), and a browser labeling server (`label_charts.py`)
+- **VLM Benchmark**: Harness for scoring vision-language models on resistance-level reading (`vlm_benchmark.py`)
 
 ## Architecture
 
 ```
 trading_framework/
-├── main.py               # Backtest application entry point
+├── main.py                   # Backtest application entry point
+├── research_resistance.py    # Detector research CLI (ladder/chart/eval/labels/pick/config)
+├── eval_pivot_resistance.py  # Score the pivot detector on a resistance_dataset split
+├── label_charts.py           # Browser labeling server for dataset charts
+├── vlm_benchmark.py          # VLM benchmark CLI (prepare/models/run/report)
 ├── src/
-│   ├── data/              # Data ingestion modules
+│   ├── data/                 # Data ingestion modules
 │   │   ├── alpaca_client.py    # Alpaca API client (daily/minute bars)
 │   │   ├── news_client.py      # Alpaca news client (per-symbol daily article counts)
 │   │   ├── simfin_store.py     # SimFin bulk store (as-of market cap / fundamentals)
 │   │   ├── sentiment_client.py # FMP social sentiment client (bonus flag, fails soft)
 │   │   └── finviz_screener.py  # Finviz screener (not used by historical backtests)
-│   ├── screening/         # Point-in-time historical screening
-│   │   └── historical.py
-│   ├── strategies/        # Trading strategies
+│   ├── screening/            # Screening and level detectors
+│   │   ├── historical.py       # Point-in-time historical screening
+│   │   ├── resistance.py       # ATR-scaled pivot zone detector (support/resistance)
+│   │   ├── pivot_resistance.py # Simple swing-high detector for the labeled dataset
+│   │   └── volume_profile.py   # Volume-at-price high-volume-node detector
+│   ├── strategies/           # Trading strategies
 │   │   └── humbled_bullish_overnight.py
-│   ├── backtest/          # Backtesting engine
+│   ├── backtest/             # Backtesting engine
 │   │   └── engine.py
-│   └── utils/             # Utility functions
+│   ├── research/             # Research tooling behind research_resistance.py
+│   │   ├── chart_levels.py     # Interactive plotly level charts
+│   │   ├── chart_png.py        # Static matplotlib PNG renderer (VLM packets)
+│   │   ├── config_io.py        # Detector configs as editable JSON
+│   │   ├── data.py             # Cached daily-bar loader (data/cache/daily/)
+│   │   ├── labels.py           # Manual label CSV store + scoring
+│   │   ├── pick_charts.py      # Detector-independent chart-date picker
+│   │   └── resistance_eval.py  # Outcome-based detector evaluation vs baselines
+│   ├── vlm/                  # VLM benchmark internals
+│   │   ├── packets.py          # Packet building from labeled charts
+│   │   ├── models.py           # Model registry (data/vlm/models.json)
+│   │   ├── providers.py        # HTTP adapters (Anthropic/OpenAI/OpenRouter/mock)
+│   │   ├── runner.py           # Cached runner with spend cap
+│   │   ├── prompt.py           # Prompt variants + answer parsing
+│   │   ├── fewshot.py          # Worked examples from labeled splits
+│   │   ├── scoring.py          # ATR-tolerance level matching
+│   │   ├── estimate.py         # Token/cost estimates
+│   │   └── report.py           # Leaderboard + HTML review page
+│   └── utils/                # Utility functions
 │       └── helpers.py
-├── tests/                 # Unit tests
-├── data/                  # Data storage directory
+├── tests/                    # unittest suite
+├── data/
+│   ├── cache/daily/          # Cached daily bars (gitignored)
+│   ├── resistance_dataset/   # Hand-labeled chart dataset (train/val/test)
+│   ├── simfin/               # SimFin bulk data cache (gitignored)
+│   └── vlm/                  # VLM packets, model registry, run results
 └── requirements.txt
 ```
 
@@ -41,7 +72,7 @@ trading_framework/
 
 ### Prerequisites
 
-- Python 3.11 or higher
+- Python 3.11 or higher (tested with Python 3.14)
 - Anaconda or Miniconda
 
 ### Setup
@@ -49,7 +80,7 @@ trading_framework/
 1. Clone the repository
 2. Create a conda environment:
 ```bash
-conda create -n trading_framework python=3.11 -y
+conda create -n trading_framework python=3.14 -y
 conda activate trading_framework
 ```
 
@@ -243,7 +274,6 @@ python research_resistance.py eval   SOFI,PLUG,OPEN --start 2023-01-01 --end 202
 
 - `chart` writes an interactive candlestick + volume HTML to `data/charts/` with each level drawn as a line from where it formed (red resistance, green support; thicker means a higher strength score). Bars after the as-of date are drawn faded so you can see what happened without it affecting the levels.
 - Consolidation ranges: when price holds a tight range for 5-10 bars (height at most 2 ATR, net drift at most 0.75 ATR), the range high and the range low are both levels. Tune with `range_*` keys in the config; `--no-ranges` turns it off.
-- Manual benchmark labels live in a CSV you edit by hand (`data/labels/resistance_labels.csv`, columns `symbol,asof,level,status,source,score,kind,note`). `labels export SYMBOL ASOF` appends the detector's levels as `status=auto`; change them to `keep` or `reject`, and add rows with `status=add` for levels it missed. `labels score` recomputes the detector (with your `--config` JSON and flag overrides) and reports recall, precision, and the missed, rejected-but-detected and unlabeled levels, so the same labels benchmark every tuning run. `chart` overlays reviewed labels as blue dashed (gold) and grey dotted (rejected) lines.
 - A second detector, `--detector volume_profile` (`src/screening/volume_profile.py`), finds high-volume nodes: each daily bar's volume is spread over its high-low range into a volume-at-price histogram, smoothed, and the strongest peaks above/below price become levels (at most `max_above` / `max_below`). It returns few levels by design and only finds resistance where a lot of volume actually traded. All commands (`ladder`, `chart`, `eval`, `labels`, `config dump`) take `--detector`.
 - Chart dates must have overhead resistance or they cannot test a detector. `pick SYMBOLS --start --end` chooses dates by detector-independent rules (price $1-$20, 20-day volume at least 500k, close 55-90% of the prior 252-bar high, 20-day return at least +5%, 20+ bars above price in the last year), sampled at random with a fixed seed and minimum spacing, and writes `data/labels/chart_set.csv`. `labels build-set` then exports candidates from several detectors for each date into the one label file and writes `data/charts/<SYMBOL>_<date>_set.html`. Review the union once (`keep` / `reject` / `add`), then score each detector against the same gold labels.
 - Blind manual labeling: `pick ... --max-total 20 --exclude <earlier csvs> --out data/labels/chart_set_manual_1.csv` selects fresh dates, then `labels manual-set --set data/labels/chart_set_manual_1.csv` writes `data/charts/manual/NN_SYMBOL_date.html` plus an `index.html`. These charts never run or draw a detector and show no bars after the as-of date, so labels are made without hindsight or detector bias. Label by adding rows `symbol,asof,level` (status defaults to add, source to manual) to `data/labels/manual_labels.csv`; re-running `manual-set` draws your labels as dashed lines. Later `labels score --labels data/labels/manual_labels.csv --detector atr_pivot` (or `volume_profile`) scores a detector against them.
@@ -251,6 +281,26 @@ python research_resistance.py eval   SOFI,PLUG,OPEN --start 2023-01-01 --end 202
 - The label file has an `id` column per (symbol, asof), numbered from the highest price down, and a `source` column naming the detector. Charts draw the label rows with the same `id` as a tag next to each line and show details on hover. Earlier labels from the pivot detector are kept in `data/labels/archive/`.
 - Detector settings can be edited in a JSON file: `config dump` writes `data/labels/detector_config.json`; pass it with `--config`.
 - `eval` scores the detector by outcomes against baselines (rolling 20/10-bar high, round numbers, random bands, and a `shifted` placebo that keeps the detector's zone widths and scores but moves them). It reports touch/reject/break rates, breakout forward returns, and whether room to the next resistance predicts follow-through, on a tune and a holdout period.
+
+### Labeled chart dataset (`data/resistance_dataset/`)
+
+A hand-labeled dataset of daily charts for benchmarking resistance detection, split into `train/`, `val/`, and `test/`. Each split contains:
+
+- `charts/NN_SYMBOL_ASOF.png` — daily candles + volume; the last bar is the as-of date
+- `price_data/NN_SYMBOL_ASOF.csv` — `date,open,high,low,close,volume` for exactly the bars on the chart (~161 bars)
+- `labels.csv` — `symbol,asof,level` gold resistance levels
+- `explainations/` (train/val only) — per-chart analyst reasoning, used as few-shot worked examples
+- `predictions*.csv` / `eval_results*.txt` — saved outputs from past detector and VLM runs
+- `charts_html/` (test only) — interactive HTML renders of the test charts
+
+Dataset helpers (run from the dataset directory or the repo root):
+
+- `data/resistance_dataset/score.py` — score a predictions CSV against a split's labels: `python score.py <split> <predictions.csv>`. A prediction is a hit within ±$0.10 of a label, or ±1% of the label when the last close is ≥ $50 (large caps)
+- `data/resistance_dataset/highs.py` — pivot-high price lookup helper: `python highs.py <price_csv> [window]` prints the last close and every bar high above it that is the max of ±`window` bars; it does not choose levels
+- `data/resistance_dataset/prompt.txt` — the few-shot task description the dataset was built for
+- `data/resistance_dataset/val/evaluate.py` — earlier quick scorer hardcoded to `test/labels.csv`; superseded by `score.py`
+- `eval_pivot_resistance.py` — run the `pivot_resistance` detector on a split and score it: `python eval_pivot_resistance.py data/resistance_dataset/test` (writes `predictions_pivot.csv`, then prints TP/FP/FN, precision, recall, F1, accuracy)
+- `label_charts.py` — interactive browser labeling server for a chart folder: `python label_charts.py --dir data/resistance_dataset/<split> --port 8765`. Left-click adds a level line, right-click deletes the nearest, arrow keys switch charts, and Save writes `<dir>/labels.csv`
 
 ## VLM Benchmark (can a vision model read resistance levels?)
 
@@ -262,7 +312,10 @@ python vlm_benchmark.py models                  # table of VLMs: prices, vision 
 python vlm_benchmark.py models --write          # also data/vlm/vlm_candidates.csv / .md
 python vlm_benchmark.py run --dry-run           # cost preview only; no keys, no network
 python vlm_benchmark.py run --first-pass --repeats 3 --budget 5
+python vlm_benchmark.py run --split val --shots train --prompt learned   # dev: val charts, train worked examples
+python vlm_benchmark.py run --split test --shots train,val --prompt learned  # final: test charts, train+val examples
 python vlm_benchmark.py report                  # leaderboard.csv + results/review/index.html
+python vlm_benchmark.py report --split val,test # score dataset splits instead of the manifest
 ```
 
 - **Keys:** `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` in `.env`. `--via openrouter` routes every model through OpenRouter so one key covers all vendors.
@@ -270,7 +323,8 @@ python vlm_benchmark.py report                  # leaderboard.csv + results/revi
 - **Offline check:** `run --mock oracle,noisy,empty,garbage` exercises the whole pipeline with fake models (no keys, no network).
 - **Scoring:** a predicted level matches a gold level within `--tol` ATR14 (headline 0.5; also reported at 0.25 and 1.0). `report` writes `leaderboard.csv`, `per_run_scores.csv`, and `results/review/index.html` where each model's levels are overlaid next to the gold chart (blue dashed = gold, green = matched, red = unmatched, orange = missed).
 - **Model registry:** `data/vlm/models.json` holds prices, context sizes, vision benchmark signals and per-model assumptions, with a `notes` section naming sources and caveats. `models --scenario low|base|high` varies the assumed hidden-reasoning size.
-- **Prompts:** `--prompt rubric` (default) encodes the labeling rules; `--prompt plain` is a bare request for an ablation.
+- **Dataset splits:** `run --split train|val|test` (and `report --split`) evaluate the `data/resistance_dataset` splits directly instead of the legacy `data/vlm` manifest. `--shots train,val` prepends worked examples from labeled splits (user turn: chart + OHLCV; assistant turn: explanation + gold JSON) — the `test` split is never allowed as shots.
+- **Prompts:** `--prompt rubric` encodes the labeling rules (default without shots); `plain` is a bare request for an ablation; `fewshot` and `learned` are used with `--shots` (`learned` is the default when shots are given). `--user-text-file` appends extra notes to the shared system prompt.
 
 ## Roadmap
 
@@ -288,6 +342,18 @@ python vlm_benchmark.py report                  # leaderboard.csv + results/revi
 - Past performance does not guarantee future results
 - Use proper risk management when trading with real money
 
-## scripts
+## Testing
 
-- `python -m http.server 8765 -d C:\data\trading\trading_framework\data\charts`
+The suite uses `unittest` (no pytest required):
+
+```bat
+C:\data\envs\trading_framework\Scripts\python.exe -m unittest discover -s tests
+```
+
+Covers the backtest engine, historical strategy screening, the resistance detectors (atr_pivot, volume_profile, pivot_resistance), and the VLM benchmark internals (scoring, providers, runner, reports) — 88 tests.
+
+## Utility scripts
+
+- `python -m http.server 8765 -d C:\data\trading\trading_framework\data\charts` — serve the generated HTML charts locally
+- `python label_charts.py --dir data/resistance_dataset/<split> --port 8765` — interactive chart labeling server (see above)
+- `data/vlm/gpt_6_astral/` — one-off VLM audit artifact: `thoughts.md` (detector rules + protocol notes) and `evaluate_run.py` (scores a predictions CSV with the dataset's matching rules)

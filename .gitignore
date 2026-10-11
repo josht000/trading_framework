@@ -4,6 +4,9 @@ data/charts/
 .env
 .vscode/
 simfin/
+eval_*.txt
+predictions*.txt
+predictions*.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
