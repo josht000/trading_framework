@@ -131,9 +131,13 @@ def build_chat_payload(spec: ModelSpec, prompt: str, png: bytes, max_tokens: int
 
 def parse_chat(resp: Dict) -> ProviderResult:
     first = (resp.get("choices") or [{}])[0]
-    content = (first.get("message") or {}).get("content") or ""
+    message = first.get("message") or {}
+    content = message.get("content") or ""
     if isinstance(content, list):
         content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
+    if not content.strip():
+        # local thinking servers (llama.cpp) park the whole reply in reasoning_content
+        content = message.get("reasoning_content") or message.get("reasoning") or ""
     u = resp.get("usage") or {}
     reasoning = int((u.get("completion_tokens_details") or {}).get("reasoning_tokens", 0) or 0)
     cost = u.get("cost")
@@ -167,6 +171,11 @@ def call_model(spec: ModelSpec, prompt: str, png: bytes, api_key: str, max_token
     png = bytes(png)
     if spec.route == "mock":
         return call_mock(spec, item or {})
+    if spec.route == "local":
+        # Local generation is serialized on the server; retrying a slow request only queues
+        # duplicates behind it, so allow a long timeout and never retry.
+        timeout = max(timeout, 1800.0)
+        retries = 0
     if spec.route == "anthropic":
         headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
         return parse_anthropic(_post(ANTHROPIC_URL, headers,
@@ -177,8 +186,10 @@ def call_model(spec: ModelSpec, prompt: str, png: bytes, api_key: str, max_token
         return parse_openai(_post(OPENAI_URL, headers,
                                   build_openai_payload(spec, prompt, png, max_tokens, system, shots),
                                   timeout, retries))
-    if spec.route in ("chat_compat", "openrouter"):
-        headers = {"Authorization": f"Bearer {api_key}", "content-type": "application/json"}
+    if spec.route in ("chat_compat", "openrouter", "local"):
+        headers = {"content-type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         return parse_chat(_post(spec.base_url.rstrip("/") + "/chat/completions", headers,
                                 build_chat_payload(spec, prompt, png, max_tokens, system, shots),
                                 timeout, retries))

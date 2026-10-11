@@ -160,8 +160,8 @@ class TestRegistryAndEstimate(unittest.TestCase):
     def test_registry_valid(self):
         self.assertGreaterEqual(len(self.reg["models"]), 10)
         for m in self.reg["models"]:
-            self.assertGreater(m.price_in, 0)
-            self.assertTrue(m.key_env or m.route == "mock")
+            self.assertGreaterEqual(m.price_in, 0)
+            self.assertTrue(m.key_env or m.route in ("mock", "local"))
 
     def test_deepseek_registry_entries(self):
         by_key = {m.key: m for m in self.reg["models"]}

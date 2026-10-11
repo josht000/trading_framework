@@ -156,6 +156,26 @@ def metrics(tp, fp, fn):
     return p, r, f1
 
 
+def _fmt_val(v):
+    if v is None:
+        return "-"
+    if isinstance(v, float):
+        return f"{v:g}"
+    return str(v)
+
+
+def _fmt_params(params):
+    return " ".join(f"{k}={_fmt_val(v)}" for k, v in params.items())
+
+
+def _print_table(headers, table, indent="   "):
+    """Right-aligned columns, two-space gutters."""
+    widths = [max([len(h)] + [len(t[i]) for t in table]) for i, h in enumerate(headers)]
+    print(indent + "  ".join(h.rjust(w) for h, w in zip(headers, widths)))
+    for t in table:
+        print(indent + "  ".join(c.rjust(w) for c, w in zip(t, widths)))
+
+
 def run_grid(name, tune_data):
     """Score every grid combo on each tune split -> [{params, per_split}]."""
     grid = GRIDS[name]
@@ -189,15 +209,26 @@ def combined(row):
 
 
 def print_leaderboard(name, rows, top):
+    """Aligned table: one column per param that varies inside the top-N shown;
+    params constant across the top-N are hoisted to a `constant:` line."""
     ranked = sorted(rows, key=lambda r: metrics(*combined(r))[2], reverse=True)
     splits = list(rows[0]["per_split"])
-    print(f"\n== {name}: top {min(top, len(ranked))} of {len(ranked)} configs (ranked by combined F1) ==")
-    cols = "".join(f"{s + ' F1':>10}" for s in splits)
-    print(f"{'rank':>5}{'comb F1':>9}{cols}   params")
-    for i, r in enumerate(ranked[:top], 1):
-        f1s = [metrics(*r["per_split"][s])[2] for s in splits]
-        print(f"{i:>5}{metrics(*combined(r))[2]:>9.3f}" +
-              "".join(f"{v:>10.3f}" for v in f1s) + "   " + json.dumps(r["params"]))
+    show = ranked[:top]
+    keys = sorted({k for r in show for k in r["params"]})
+    varying = [k for k in keys if len({json.dumps(r["params"].get(k)) for r in show}) > 1]
+    const = _fmt_params({k: show[0]["params"][k] for k in keys if k not in varying})
+    tune = "+".join(splits)
+
+    print(f"\n== {name}: top {len(show)} of {len(ranked)} configs, ranked by {tune} F1 ==")
+    if const:
+        print(f"   constant: {const}")
+    table = []
+    for i, r in enumerate(show, 1):
+        row = [str(i), f"{metrics(*combined(r))[2]:.3f}"]
+        row += [f"{metrics(*r['per_split'][s])[2]:.3f}" for s in splits]
+        row += [_fmt_val(r["params"].get(k)) for k in varying]
+        table.append(row)
+    _print_table(["#", "combF1"] + [f"{s}F1" for s in splits] + varying, table)
     return ranked
 
 
@@ -230,18 +261,21 @@ def save_csv(all_rows, tune_splits, path):
 
 
 def save_best(name, params, n_configs, splits_data):
-    """Write predictions_<name>.csv + eval_results_<name>.txt for each split."""
+    """Write predictions_<name>.csv + eval_results_<name>.txt per split.
+    Returns {split: (tp, fp, fn)} scored with the score.py rule."""
+    results = {}
     for split, (frames, labels, closes) in splits_data.items():
         detect = make_detector(name, dict(params))
         split_dir = os.path.join(DATASET, split)
         pred_path = os.path.join(split_dir, f"predictions_{name}.csv")
         tag = f"pivot_bars={params.get('pivot_bars')}" if name == "pivot" else name
-        n_levels = 0
+        preds, n_levels = {}, 0
         with open(pred_path, "w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["symbol", "asof", "level", "note"])
             for (sym, asof), (num, df) in sorted(frames.items(), key=lambda kv: int(kv[1][0])):
-                for lv in detect(df):
+                preds[(sym, asof)] = [round(lv, 2) for lv in detect(df)]
+                for lv in preds[(sym, asof)]:
                     w.writerow([sym, asof, f"{lv:.2f}", f"chart {num} {tag}"])
                     n_levels += 1
         out = subprocess.run(
@@ -253,8 +287,21 @@ def save_best(name, params, n_configs, splits_data):
         eval_path = os.path.join(split_dir, f"eval_results_{name}.txt")
         with open(eval_path, "w") as f:
             f.write(header + out.stdout)
-        tail = out.stdout.strip().splitlines()[-1]
-        print(f"{split:>6}: {pred_path} + {eval_path}\n        {tail}")
+        results[split] = score_counts(labels, preds, closes)
+        print(f"  {split}: {pred_path} + {eval_path}")
+    return results
+
+
+def print_summary(summary, splits):
+    """Final table: best config per detector with per-split F1s."""
+    print("\n== best configs ==")
+    table = []
+    for name, row, results in summary:
+        line = [name, f"{metrics(*combined(row))[2]:.3f}"]
+        line += [f"{metrics(*results[s])[2]:.3f}" for s in splits]
+        line.append(_fmt_params(row["params"]))
+        table.append(line)
+    _print_table(["detector", "combF1"] + [f"{s}F1" for s in splits] + ["params"], table)
 
 
 def main():
@@ -275,7 +322,7 @@ def main():
         rows, n = run_grid(name, tune_data)
         all_rows[name] = rows
         ranked = print_leaderboard(name, rows, args.top)
-        best[name] = (ranked[0]["params"], n)
+        best[name] = (ranked[0], n)
 
     save_csv(all_rows, tune_splits, SWEEP_CSV)
 
@@ -283,9 +330,12 @@ def main():
         return
     splits_data = {s: tune_data.get(s) or load_split(s) for s in SPLITS}
     print("\n== saving best configs ==")
-    for name, (params, n) in best.items():
-        print(f"{name}: {json.dumps(params)}")
-        save_best(name, params, n, splits_data)
+    summary = []
+    for name, (row, n) in best.items():
+        print(f"{name}:")
+        results = save_best(name, row["params"], n, splits_data)
+        summary.append((name, row, results))
+    print_summary(summary, SPLITS)
 
 
 if __name__ == "__main__":

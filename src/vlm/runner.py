@@ -59,7 +59,7 @@ def load_runs(root: str = DEFAULT_ROOT) -> List[Dict]:
 def missing_keys(models: List[ModelSpec]) -> Dict[str, List[str]]:
     miss: Dict[str, List[str]] = {}
     for m in models:
-        if m.route != "mock" and not os.getenv(m.key_env):
+        if m.route != "mock" and m.key_env and not os.getenv(m.key_env):
             miss.setdefault(m.key_env, []).append(m.key)
     return miss
 

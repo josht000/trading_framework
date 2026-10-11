@@ -40,6 +40,8 @@ class ModelSpec:
         """Return the spec re-pointed at OpenRouter when route == 'openrouter' (one key for every model)."""
         if route == "native" or self.route == "mock":
             return self
+        if self.route == "local":
+            raise ValueError(f"{self.key} is a local model and cannot be routed through OpenRouter")
         if route != "openrouter":
             raise ValueError(f"unknown route {route!r}; use native or openrouter")
         from dataclasses import replace
