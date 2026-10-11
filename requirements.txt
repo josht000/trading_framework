@@ -1,0 +1,22 @@
+# Core dependencies
+vectorbt[full]==1.1.1
+
+# Alpaca data
+alpaca-py==0.44.0
+alpaca-trade-api>=3.0.0
+
+# Fundamentals
+simfin==1.0.2
+
+# Data storage
+pyarrow>=14.0.0
+
+# Web scraping for Finviz
+beautifulsoup4==4.15.0
+requests>=2.31.0
+
+# Utilities
+python-dotenv>=1.0.0
+pytz>=2023.3
+simfin
+plotly==7.1.0

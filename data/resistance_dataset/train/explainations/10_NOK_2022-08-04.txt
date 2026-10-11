@@ -1,0 +1,2 @@
+Looking at almost anything that gets tested multiple times. Once a level is broken we once consider
+prices that are higher than the broken level.

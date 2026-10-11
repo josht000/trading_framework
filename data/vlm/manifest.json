@@ -1,0 +1,384 @@
+{
+  "bars": 160,
+  "image_px": [
+    1600,
+    1000
+  ],
+  "items": [
+    {
+      "id": "01_BB_2024-10-21",
+      "number": 1,
+      "symbol": "BB",
+      "asof": "2024-10-21",
+      "price": 2.58,
+      "atr14": 0.10659230651134598,
+      "n_bars": 161,
+      "first_date": "2024-03-04",
+      "last_date": "2024-10-21",
+      "chart_blind": "charts_without_labels/01_BB_2024-10-21.png",
+      "chart_labeled": "charts_with_labels/01_BB_2024-10-21.png",
+      "ohlcv": "ohlcv/01_BB_2024-10-21.csv",
+      "gold_levels": [
+        2.66,
+        2.85,
+        3.0,
+        3.24,
+        3.85
+      ]
+    },
+    {
+      "id": "02_CLOV_2023-11-06",
+      "number": 2,
+      "symbol": "CLOV",
+      "asof": "2023-11-06",
+      "price": 1.13,
+      "atr14": 0.071598610532697,
+      "n_bars": 161,
+      "first_date": "2023-03-20",
+      "last_date": "2023-11-06",
+      "chart_blind": "charts_without_labels/02_CLOV_2023-11-06.png",
+      "chart_labeled": "charts_with_labels/02_CLOV_2023-11-06.png",
+      "ohlcv": "ohlcv/02_CLOV_2023-11-06.csv",
+      "gold_levels": [
+        1.25,
+        1.41,
+        1.63
+      ]
+    },
+    {
+      "id": "03_CLSK_2023-05-18",
+      "number": 3,
+      "symbol": "CLSK",
+      "asof": "2023-05-18",
+      "price": 4.21,
+      "atr14": 0.4396314357270577,
+      "n_bars": 161,
+      "first_date": "2022-09-28",
+      "last_date": "2023-05-18",
+      "chart_blind": "charts_without_labels/03_CLSK_2023-05-18.png",
+      "chart_labeled": "charts_with_labels/03_CLSK_2023-05-18.png",
+      "ohlcv": "ohlcv/03_CLSK_2023-05-18.csv",
+      "gold_levels": [
+        4.65,
+        5.12
+      ]
+    },
+    {
+      "id": "04_GME_2024-05-10",
+      "number": 4,
+      "symbol": "GME",
+      "asof": "2024-05-10",
+      "price": 17.46,
+      "atr14": 1.6285062133939272,
+      "n_bars": 161,
+      "first_date": "2023-09-21",
+      "last_date": "2024-05-10",
+      "chart_blind": "charts_without_labels/04_GME_2024-05-10.png",
+      "chart_labeled": "charts_with_labels/04_GME_2024-05-10.png",
+      "ohlcv": "ohlcv/04_GME_2024-05-10.csv",
+      "gold_levels": [
+        18.5,
+        20.2
+      ]
+    },
+    {
+      "id": "05_HUT_2023-12-26",
+      "number": 5,
+      "symbol": "HUT",
+      "asof": "2023-12-26",
+      "price": 15.62,
+      "atr14": 1.348465399464417,
+      "n_bars": 161,
+      "first_date": "2023-05-08",
+      "last_date": "2023-12-26",
+      "chart_blind": "charts_without_labels/05_HUT_2023-12-26.png",
+      "chart_labeled": "charts_with_labels/05_HUT_2023-12-26.png",
+      "ohlcv": "ohlcv/05_HUT_2023-12-26.csv",
+      "gold_levels": [
+        16.75,
+        18.3,
+        20.0,
+        22.75
+      ]
+    },
+    {
+      "id": "06_IONQ_2024-10-14",
+      "number": 6,
+      "symbol": "IONQ",
+      "asof": "2024-10-14",
+      "price": 10.84,
+      "atr14": 0.7026826201252631,
+      "n_bars": 161,
+      "first_date": "2024-02-26",
+      "last_date": "2024-10-14",
+      "chart_blind": "charts_without_labels/06_IONQ_2024-10-14.png",
+      "chart_labeled": "charts_with_labels/06_IONQ_2024-10-14.png",
+      "ohlcv": "ohlcv/06_IONQ_2024-10-14.csv",
+      "gold_levels": [
+        11.7,
+        12.32
+      ]
+    },
+    {
+      "id": "07_JOBY_2024-12-23",
+      "number": 7,
+      "symbol": "JOBY",
+      "asof": "2024-12-23",
+      "price": 7.62,
+      "atr14": 0.712005120782092,
+      "n_bars": 161,
+      "first_date": "2024-05-06",
+      "last_date": "2024-12-23",
+      "chart_blind": "charts_without_labels/07_JOBY_2024-12-23.png",
+      "chart_labeled": "charts_with_labels/07_JOBY_2024-12-23.png",
+      "ohlcv": "ohlcv/07_JOBY_2024-12-23.csv",
+      "gold_levels": [
+        9.08,
+        9.32
+      ]
+    },
+    {
+      "id": "09_NIO_2025-02-27",
+      "number": 9,
+      "symbol": "NIO",
+      "asof": "2025-02-27",
+      "price": 4.79,
+      "atr14": 0.24304800763713647,
+      "n_bars": 161,
+      "first_date": "2024-07-09",
+      "last_date": "2025-02-27",
+      "chart_blind": "charts_without_labels/09_NIO_2025-02-27.png",
+      "chart_labeled": "charts_with_labels/09_NIO_2025-02-27.png",
+      "ohlcv": "ohlcv/09_NIO_2025-02-27.csv",
+      "gold_levels": [
+        5.36,
+        6.03,
+        6.45,
+        6.93,
+        7.38,
+        7.71
+      ]
+    },
+    {
+      "id": "10_NOK_2022-08-04",
+      "number": 10,
+      "symbol": "NOK",
+      "asof": "2022-08-04",
+      "price": 5.23,
+      "atr14": 0.1142524558671552,
+      "n_bars": 161,
+      "first_date": "2021-12-14",
+      "last_date": "2022-08-04",
+      "chart_blind": "charts_without_labels/10_NOK_2022-08-04.png",
+      "chart_labeled": "charts_with_labels/10_NOK_2022-08-04.png",
+      "ohlcv": "ohlcv/10_NOK_2022-08-04.csv",
+      "gold_levels": [
+        5.34,
+        5.45,
+        5.59,
+        5.85
+      ]
+    },
+    {
+      "id": "11_PLTR_2023-04-06",
+      "number": 11,
+      "symbol": "PLTR",
+      "asof": "2023-04-06",
+      "price": 8.09,
+      "atr14": 0.4084527100890344,
+      "n_bars": 161,
+      "first_date": "2022-08-17",
+      "last_date": "2023-04-06",
+      "chart_blind": "charts_without_labels/11_PLTR_2023-04-06.png",
+      "chart_labeled": "charts_with_labels/11_PLTR_2023-04-06.png",
+      "ohlcv": "ohlcv/11_PLTR_2023-04-06.csv",
+      "gold_levels": [
+        8.65,
+        9.71,
+        10.31
+      ]
+    },
+    {
+      "id": "12_PLUG_2023-02-01",
+      "number": 12,
+      "symbol": "PLUG",
+      "asof": "2023-02-01",
+      "price": 17.68,
+      "atr14": 1.1213844179041488,
+      "n_bars": 161,
+      "first_date": "2022-06-13",
+      "last_date": "2023-02-01",
+      "chart_blind": "charts_without_labels/12_PLUG_2023-02-01.png",
+      "chart_labeled": "charts_with_labels/12_PLUG_2023-02-01.png",
+      "ohlcv": "ohlcv/12_PLUG_2023-02-01.csv",
+      "gold_levels": [
+        18.26,
+        19.75,
+        23.45,
+        30.43,
+        31.56
+      ]
+    },
+    {
+      "id": "13_PTON_2024-08-26",
+      "number": 13,
+      "symbol": "PTON",
+      "asof": "2024-08-26",
+      "price": 4.9,
+      "atr14": 0.34258020750991186,
+      "n_bars": 161,
+      "first_date": "2024-01-05",
+      "last_date": "2024-08-26",
+      "chart_blind": "charts_without_labels/13_PTON_2024-08-26.png",
+      "chart_labeled": "charts_with_labels/13_PTON_2024-08-26.png",
+      "ohlcv": "ohlcv/13_PTON_2024-08-26.csv",
+      "gold_levels": [
+        5.3,
+        5.37,
+        5.56,
+        6.18,
+        7.24
+      ]
+    },
+    {
+      "id": "14_RIOT_2024-02-27",
+      "number": 14,
+      "symbol": "RIOT",
+      "asof": "2024-02-27",
+      "price": 16.8,
+      "atr14": 1.439910679439867,
+      "n_bars": 161,
+      "first_date": "2023-07-10",
+      "last_date": "2024-02-27",
+      "chart_blind": "charts_without_labels/14_RIOT_2024-02-27.png",
+      "chart_labeled": "charts_with_labels/14_RIOT_2024-02-27.png",
+      "ohlcv": "ohlcv/14_RIOT_2024-02-27.csv",
+      "gold_levels": [
+        18.75,
+        19.25,
+        19.5,
+        20.65
+      ]
+    },
+    {
+      "id": "15_RIVN_2024-07-30",
+      "number": 15,
+      "symbol": "RIVN",
+      "asof": "2024-07-30",
+      "price": 16.22,
+      "atr14": 0.988230564092632,
+      "n_bars": 161,
+      "first_date": "2023-12-07",
+      "last_date": "2024-07-30",
+      "chart_blind": "charts_without_labels/15_RIVN_2024-07-30.png",
+      "chart_labeled": "charts_with_labels/15_RIVN_2024-07-30.png",
+      "ohlcv": "ohlcv/15_RIVN_2024-07-30.csv",
+      "gold_levels": [
+        18.86,
+        20.66,
+        21.94,
+        24.61
+      ]
+    },
+    {
+      "id": "16_RKLB_2024-07-10",
+      "number": 16,
+      "symbol": "RKLB",
+      "asof": "2024-07-10",
+      "price": 5.13,
+      "atr14": 0.2294178303017863,
+      "n_bars": 161,
+      "first_date": "2023-11-16",
+      "last_date": "2024-07-10",
+      "chart_blind": "charts_without_labels/16_RKLB_2024-07-10.png",
+      "chart_labeled": "charts_with_labels/16_RKLB_2024-07-10.png",
+      "ohlcv": "ohlcv/16_RKLB_2024-07-10.csv",
+      "gold_levels": [
+        5.25,
+        5.67,
+        5.75,
+        6.14
+      ]
+    },
+    {
+      "id": "17_SNAP_2024-05-28",
+      "number": 17,
+      "symbol": "SNAP",
+      "asof": "2024-05-28",
+      "price": 15.32,
+      "atr14": 0.6380121439565337,
+      "n_bars": 161,
+      "first_date": "2023-10-06",
+      "last_date": "2024-05-28",
+      "chart_blind": "charts_without_labels/17_SNAP_2024-05-28.png",
+      "chart_labeled": "charts_with_labels/17_SNAP_2024-05-28.png",
+      "ohlcv": "ohlcv/17_SNAP_2024-05-28.csv",
+      "gold_levels": [
+        15.52,
+        16.65,
+        17.29,
+        17.5,
+        17.75
+      ]
+    },
+    {
+      "id": "18_SNDL_2024-04-23",
+      "number": 18,
+      "symbol": "SNDL",
+      "asof": "2024-04-23",
+      "price": 2.07,
+      "atr14": 0.1715559106689532,
+      "n_bars": 161,
+      "first_date": "2023-09-01",
+      "last_date": "2024-04-23",
+      "chart_blind": "charts_without_labels/18_SNDL_2024-04-23.png",
+      "chart_labeled": "charts_with_labels/18_SNDL_2024-04-23.png",
+      "ohlcv": "ohlcv/18_SNDL_2024-04-23.csv",
+      "gold_levels": [
+        2.17,
+        2.2,
+        2.41,
+        2.67
+      ]
+    },
+    {
+      "id": "19_SOFI_2023-12-13",
+      "number": 19,
+      "symbol": "SOFI",
+      "asof": "2023-12-13",
+      "price": 8.94,
+      "atr14": 0.44353885066179327,
+      "n_bars": 161,
+      "first_date": "2023-04-26",
+      "last_date": "2023-12-13",
+      "chart_blind": "charts_without_labels/19_SOFI_2023-12-13.png",
+      "chart_labeled": "charts_with_labels/19_SOFI_2023-12-13.png",
+      "ohlcv": "ohlcv/19_SOFI_2023-12-13.csv",
+      "gold_levels": [
+        9.18,
+        10.1,
+        11.1,
+        11.7
+      ]
+    },
+    {
+      "id": "20_SOUN_2023-07-06",
+      "number": 20,
+      "symbol": "SOUN",
+      "asof": "2023-07-06",
+      "price": 3.52,
+      "atr14": 0.4813039474681949,
+      "n_bars": 161,
+      "first_date": "2022-11-11",
+      "last_date": "2023-07-06",
+      "chart_blind": "charts_without_labels/20_SOUN_2023-07-06.png",
+      "chart_labeled": "charts_with_labels/20_SOUN_2023-07-06.png",
+      "ohlcv": "ohlcv/20_SOUN_2023-07-06.csv",
+      "gold_levels": [
+        4.48,
+        4.95,
+        5.11
+      ]
+    }
+  ]
+}

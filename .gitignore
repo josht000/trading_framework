@@ -1,3 +1,10 @@
+cache/
+results/
+data/charts/
+.env
+.vscode/
+simfin/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

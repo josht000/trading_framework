@@ -1,0 +1,1 @@
+Very straighforward chart. Several price levels hit multiple times. Don't consider prices before all time high on the chart.
