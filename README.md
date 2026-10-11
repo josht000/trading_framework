@@ -20,7 +20,8 @@ A Python-based automated trading framework for backtesting, simulating, and live
 trading_framework/
 ├── main.py                   # Backtest application entry point
 ├── research_resistance.py    # Detector research CLI (ladder/chart/eval/labels/pick/config)
-├── eval_pivot_resistance.py  # Score the pivot detector on a resistance_dataset split
+├── eval_pivot_resistance.py  # Score a detector on a resistance_dataset split
+├── sweep_resistance.py       # Param-sweep detectors on train/val, save best scores
 ├── label_charts.py           # Browser labeling server for dataset charts
 ├── vlm_benchmark.py          # VLM benchmark CLI (prepare/models/run/report)
 ├── src/
@@ -34,6 +35,8 @@ trading_framework/
 │   │   ├── historical.py       # Point-in-time historical screening
 │   │   ├── resistance.py       # ATR-scaled pivot zone detector (support/resistance)
 │   │   ├── pivot_resistance.py # Simple swing-high detector for the labeled dataset
+│   │   ├── cluster_levels.py   # ZigZag / rolling-extreme pivots + agglomerative clustering
+│   │   ├── sr_finder.py        # Ports of albertsl's finder: deriv extrema, MeanShift, pivots
 │   │   └── volume_profile.py   # Volume-at-price high-volume-node detector
 │   ├── strategies/           # Trading strategies
 │   │   └── humbled_bullish_overnight.py
@@ -264,6 +267,14 @@ The framework uses vectorbt for fast vectorized backtesting:
 
 `src/screening/pivot_resistance.py` is a simpler, dependency-free alternative built from the `data/resistance_dataset` few-shot experiments: swing highs (+-4 bars) above the last close, merged within $0.10 keeping the exact top. About 0.67 F1 (+-$0.10 hit) on both train and test splits. Score it with `python eval_pivot_resistance.py data/resistance_dataset/test` (writes `predictions_pivot.csv`, then prints TP/FP/FN, precision, recall, F1, accuracy).
 
+`src/screening/cluster_levels.py` is a pure-numpy port of day0market/support_resistance (`pricelevels`): `zigzag` runs ZigZag `peak_valley_pivots` over the highs (or closes), `raw_price` takes bars equal to the centered rolling max, and both cluster the candidate prices with AgglomerativeClustering into levels.
+
+`src/screening/sr_finder.py` ports the implemented parts of albertsl/support-resistance_trading-bot's `support_resistance_finder.py` (upstream is a 2018 sketch — `_pivot_points` and the trendline methods are `pass`; trendlines are skipped since the dataset labels horizontal levels): `deriv_extrema` finds local maxima where the (optionally Butterworth-smoothed) series' gradient crosses, `volume_levels` takes low-slope + high-volume bars, `meanshift` clusters the price series with `estimate_bandwidth` and emits band edges, and `floor_pivots` computes classic/camarilla/fibonacci pivot-point formulas over a lookback.
+
+`eval_pivot_resistance.py` scores any of the detectors on a split: `--detector pivot|atr_pivot|zigzag|raw_price|volume_profile|deriv_extrema|volume_levels|meanshift|floor_pivots`, with config fields overridable via repeated `--set key=value` (e.g. `--detector zigzag --set peak_percent_delta=2 --set series=close`).
+
+`sweep_resistance.py` grid-searches all five detector families over the train+val splits (`--tune`), prints a per-family leaderboard ranked by combined F1, writes the full table to `data/resistance_dataset/sweep_results.csv`, and saves each family's best config the usual way: `predictions_<detector>.csv` + `eval_results_<detector>.txt` (score.py output) in every split. Last sweep (3318 configs, 9 families): pivot kept its defaults (pivot_bars=4, merge_tol=0.10) at 0.710 train+val F1; zigzag (delta=3%, $0.10 merge) 0.694, raw_price (5-bar rolling max, $0.10 merge) 0.685 and deriv_extrema (unsmoothed sign-cross maxima, $0.10 merge) 0.667 are close behind — everything that works prefers a ~$0.10 merge, matching the scoring tolerance; atr_pivot's best (`pivot_left=3 pivot_right=3 min_prominence_atr=0.5 merge_atr=0.3 include_ranges=false`) reached 0.632 and improved test F1 from 0.574 to 0.656; meanshift landed mid-pack (0.575), while volume_levels (0.530), floor_pivots (0.362) and volume_profile (0.123) trail — formulaic and volume-node levels don't match the labelled swing-high style.
+
 Research CLI (run with the `trading_framework` interpreter):
 
 ```bat
@@ -299,7 +310,8 @@ Dataset helpers (run from the dataset directory or the repo root):
 - `data/resistance_dataset/highs.py` — pivot-high price lookup helper: `python highs.py <price_csv> [window]` prints the last close and every bar high above it that is the max of ±`window` bars; it does not choose levels
 - `data/resistance_dataset/prompt.txt` — the few-shot task description the dataset was built for
 - `data/resistance_dataset/val/evaluate.py` — earlier quick scorer hardcoded to `test/labels.csv`; superseded by `score.py`
-- `eval_pivot_resistance.py` — run the `pivot_resistance` detector on a split and score it: `python eval_pivot_resistance.py data/resistance_dataset/test` (writes `predictions_pivot.csv`, then prints TP/FP/FN, precision, recall, F1, accuracy)
+- `eval_pivot_resistance.py` — run a detector on a split and score it: `python eval_pivot_resistance.py data/resistance_dataset/test --detector atr_pivot` (writes `predictions_<detector>.csv`, then prints TP/FP/FN, precision, recall, F1, accuracy)
+- `sweep_resistance.py` — grid-search detector params on train+val and save the best configs' scores: `python sweep_resistance.py` (`--detector` for one family, `--no-save` for leaderboard only)
 - `label_charts.py` — interactive browser labeling server for a chart folder: `python label_charts.py --dir data/resistance_dataset/<split> --port 8765`. Left-click adds a level line, right-click deletes the nearest, arrow keys switch charts, and Save writes `<dir>/labels.csv`
 
 ## VLM Benchmark (can a vision model read resistance levels?)
@@ -325,6 +337,51 @@ python vlm_benchmark.py report --split val,test # score dataset splits instead o
 - **Model registry:** `data/vlm/models.json` holds prices, context sizes, vision benchmark signals and per-model assumptions, with a `notes` section naming sources and caveats. `models --scenario low|base|high` varies the assumed hidden-reasoning size.
 - **Dataset splits:** `run --split train|val|test` (and `report --split`) evaluate the `data/resistance_dataset` splits directly instead of the legacy `data/vlm` manifest. `--shots train,val` prepends worked examples from labeled splits (user turn: chart + OHLCV; assistant turn: explanation + gold JSON) — the `test` split is never allowed as shots.
 - **Prompts:** `--prompt rubric` encodes the labeling rules (default without shots); `plain` is a bare request for an ablation; `fewshot` and `learned` are used with `--shots` (`learned` is the default when shots are given). `--user-text-file` appends extra notes to the shared system prompt.
+
+## Benchmark results (`data/resistance_dataset`)
+
+Unless noted, scores come from `score.py`: a prediction hits a label within ±$0.10,
+or ±1% of the label when the chart's last close ≥ $50 (large caps — the metric shown).
+`accuracy` = TP/(TP+FP+FN). Per-chart details live in each split's `eval_results*.txt`;
+the full parameter table is `data/resistance_dataset/sweep_results.csv`.
+
+### Rule-based detectors — test split
+
+Each row is the config picked by the train+val sweep (`sweep_resistance.py`,
+3,318 configs across 9 families), sorted by F1.
+
+| detector | TP | FP | FN | precision | recall | F1 | accuracy |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| atr_pivot | 63 | 39 | 27 | 0.618 | 0.700 | 0.656 | 0.488 |
+| pivot | 65 | 48 | 25 | 0.575 | 0.722 | 0.640 | 0.471 |
+| zigzag | 71 | 61 | 19 | 0.538 | 0.789 | 0.640 | 0.470 |
+| raw_price | 73 | 74 | 17 | 0.497 | 0.811 | 0.616 | 0.445 |
+| meanshift | 62 | 58 | 28 | 0.517 | 0.689 | 0.590 | 0.419 |
+| deriv_extrema | 67 | 87 | 23 | 0.435 | 0.744 | 0.549 | 0.379 |
+| volume_levels | 68 | 183 | 22 | 0.271 | 0.756 | 0.399 | 0.249 |
+| floor_pivots | 27 | 53 | 63 | 0.338 | 0.300 | 0.318 | 0.189 |
+| volume_profile | 14 | 32 | 76 | 0.304 | 0.156 | 0.206 | 0.115 |
+
+### AI / VLM-based — model reads the blind chart + OHLCV CSV, test split
+
+Agent/VLM chart-reading runs scored by `score.py` (`predictions_*.csv` written
+before labels are read; `eval_results*.txt` holds the detail). Earlier val-split
+iterations are kept in `val/eval_results*.txt`.
+
+| run | TP | FP | FN | precision | recall | F1 | accuracy |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| vlm_audit_20261009 | 72 | 37 | 18 | 0.661 | 0.800 | 0.724 | 0.567 |
+| vlm2 | 72 | 46 | 18 | 0.610 | 0.800 | 0.692 | 0.529 |
+| skill, rescored | 70 | 44 | 20 | 0.614 | 0.778 | 0.686 | 0.522 |
+| v5 (skill) | 75 | 67 | 15 | 0.528 | 0.833 | 0.647 | 0.478 |
+
+The `vlm_benchmark.py` leaderboard uses its own metric — greedy matching within
+a multiple of ATR14, not $0.10 — so it is kept separate (full table:
+`data/vlm/results/leaderboard_*.csv`; `runs` = charts scored). Test split so far:
+
+| model | runs | precision@0.5ATR | recall@0.5ATR | F1@0.5ATR | F1@1ATR |
+|---|--:|--:|--:|--:|--:|
+| gpt-6-luna | 20 | 0.723 | 0.783 | 0.726 | 0.763 |
 
 ## Roadmap
 
