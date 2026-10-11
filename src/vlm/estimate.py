@@ -1,5 +1,5 @@
 """
-Token and cost estimates for a packet (image + prompt + OHLCV text).
+Token and cost estimates for one request (shared instructions + optional worked examples + one query chart).
 
 These are ESTIMATES: image tokens follow each vendor's documented rule, text tokens use a
 chars-per-token ratio typical for numeric CSV, and hidden reasoning tokens are an assumed
@@ -39,19 +39,23 @@ def text_tokens(spec: ModelSpec, n_chars: int) -> int:
     return math.ceil(n_chars / CHARS_PER_TOKEN * spec.text_token_factor)
 
 
-def estimate_call(spec: ModelSpec, width: int, height: int, text_chars: int, scenario: str = "base") -> Dict:
-    t_in = image_tokens(spec, width, height) + text_tokens(spec, text_chars)
+def estimate_call(spec: ModelSpec, width: int, height: int, text_chars: int, scenario: str = "base",
+                  system_chars: int = 0, n_images: int = 1) -> Dict:
+    """Estimate one request: n_images = 1 query chart + worked-example charts."""
+    img_tok = image_tokens(spec, width, height) * max(1, n_images)
+    t_in = img_tok + text_tokens(spec, text_chars + system_chars)
     t_out = VISIBLE_OUTPUT_TOKENS + int(spec.est_reasoning_tokens * SCENARIOS[scenario])
     cost = t_in * spec.price_in / 1e6 + t_out * spec.price_out / 1e6
-    return {"image_tokens": image_tokens(spec, width, height), "input_tokens": t_in,
+    return {"image_tokens": img_tok, "input_tokens": t_in,
             "output_tokens": t_out, "cost": cost}
 
 
 def model_table(models: List[ModelSpec], width: int, height: int, text_chars: int,
-                n_charts: int, repeats: int, scenario: str = "base") -> pd.DataFrame:
+                n_charts: int, repeats: int, scenario: str = "base",
+                system_chars: int = 0, n_images: int = 1) -> pd.DataFrame:
     rows = []
     for m in models:
-        e = estimate_call(m, width, height, text_chars, scenario)
+        e = estimate_call(m, width, height, text_chars, scenario, system_chars, n_images)
         v = m.vision
         rows.append({
             "model": m.label, "key": m.key, "vendor": m.vendor, "tier": m.tier,
@@ -61,6 +65,7 @@ def model_table(models: List[ModelSpec], width: int, height: int, text_chars: in
             "context": m.context, "open": "yes" if m.open_weights else "no",
             "arena_vision": v.get("arena_vision"), "charxiv_r": v.get("charxiv_r"),
             "chartography": v.get("chartography"), "mmmu_pro": v.get("mmmu_pro"),
+            "vision_note": m.vision_note,
             "route": m.route, "first_pass": "yes" if m.first_pass else "",
         })
     return pd.DataFrame(rows)

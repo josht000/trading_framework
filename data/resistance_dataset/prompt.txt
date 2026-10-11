@@ -1,0 +1,12 @@
+Read the images in data/resistance_dataset/train/.png labels in data/resistance_dataset/train/labels.csv, ohlcv data in data/resistance_dataset/train/price_data/.csv. 
+A good resistance level is really a zone not necessarily a exact price so +- $.10 is accetible to call it a "hit". 
+
+You'll do few shot learning to detect resistance levels from the chart and the ohlcv data. You can do 3 iterations of 
+train-test-eval to improve your results and internal rules BUT DO NOT MEMORIZE the test set under any circumstances!!!
+
+
+Before you test yourself, create an output file that you can later read without bias, and test against the labels in data/resistance_dataset/test/labels.csv. Create standard detector metrics, accuracy, false postives, false negatives, etc. 
+
+The test set is similarly organized in the data/resistance_dataset/test.
+
+Tips: prefer exact pivot-bar highs over zone midpoints, and when a thick zone exists, mark both edges rather than one middle price. 

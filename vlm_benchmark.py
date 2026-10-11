@@ -63,9 +63,18 @@ def _sizes(root, user_text="", explanations_root=DEFAULT_EXPLANATIONS_ROOT, spli
             items, size = mf["items"], tuple(mf["image_px"])
     except FileNotFoundError:
         return (1600, 1000), system_chars + shot_chars, 7000, 0, len(shots)
+    dataset_items = {}
+    if not split:
+        for packet_split in ("train", "val"):
+            try:
+                dataset_items.update({i["id"]: i for i in load_split_items(packet_split, explanations_root)})
+            except FileNotFoundError:
+                pass
     chars = []
     for it in items:
         ohlcv = it["ohlcv_path"] if split else os.path.join(root, it["ohlcv"])
+        if not split and not os.path.exists(ohlcv):
+            ohlcv = dataset_items.get(it["id"], {}).get("ohlcv_path", ohlcv)
         with open(ohlcv, encoding="utf8") as f:
             note = "" if split else load_explanation(it, explanations_root)
             chars.append(len(packet_text(it, f.read(), note)))

@@ -4,7 +4,10 @@
     "Prices are USD per 1M tokens (standard, non-batch, short-context) from the vendors' official pricing pages checked 2026-10-08; models reached only through OpenRouter use OpenRouter's live list price.",
     "Vision signals are proxies only. No public benchmark scores support/resistance reading on price charts. Numbers come from different sources and settings (tools vs no tools, vendor self-reported vs leaderboard) and are not comparable across rows.",
     "est_reasoning_tokens is an ASSUMED hidden-reasoning output size per request; actual usage is recorded on every real run and replaces these estimates.",
-    "Gemini 3.8 Flash price is introductory ($0.75/$3.75) through 2026-12-31, then $1.50/$7.50."
+    "Gemini 3.8 Flash price is introductory ($0.75/$3.75) through 2026-12-31, then $1.50/$7.50.",
+    "DeepSeek V4.1 Flash and V4 Flash Vision Exp IDs, image support, prices, and contexts verified on OpenRouter 2026-10-09. Vision Exp is explicitly experimental; neither has chart-specific performance data in this registry.",
+    "DeepSeek standard rates are OpenRouter list prices as of 2026-10-09; cache-read discounts are not used in estimates.",
+    "DeepSeek V4.1 Flash / V4 Flash Vision Exp are reasoning models: in a first unconstrained run (8000-token cap) V4.1 Flash returned 8/8 empty answers and Vision Exp 2/8, with ~4800-8000 hidden reasoning tokens each. They now request reasoning effort 'low' (est. 3000 reasoning tokens, unverified until re-run) and runs use --max-tokens 16000."
   ],
   "sources": {
     "anthropic_pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
@@ -174,6 +177,28 @@
       "context": "1M", "open_weights": true, "first_pass": false,
       "vision": {"arena_vision": 1301, "charxiv_r": 89.4, "chartography": null, "mmmu_pro": null},
       "vision_note": "Arena 1301; CharXiv-R 89.4 with tools; open weights"
+    },
+    {
+      "key": "deepseek-v4.1-flash", "label": "DeepSeek V4.1 Flash", "vendor": "DeepSeek", "tier": "budget",
+      "route": "openrouter", "api_model": "deepseek/deepseek-v4.1-flash", "key_env": "OPENROUTER_API_KEY",
+      "openrouter_id": "deepseek/deepseek-v4.1-flash",
+      "price_in": 0.30, "price_out": 1.20, "price_note": "OpenRouter list price",
+      "image_method": "generic28", "text_token_factor": 1.0,
+      "extra_body": {"reasoning": {"effort": "low"}}, "est_reasoning_tokens": 3000,
+      "context": "1.05M", "open_weights": false, "first_pass": true,
+      "vision": {"arena_vision": null, "charxiv_r": null, "chartography": null, "mmmu_pro": null},
+      "vision_note": "Native image input confirmed; no chart-specific benchmark located"
+    },
+    {
+      "key": "deepseek-v4-flash-vision-exp", "label": "DeepSeek V4 Flash Vision Exp", "vendor": "DeepSeek", "tier": "budget",
+      "route": "openrouter", "api_model": "deepseek/deepseek-v4-flash-vision-exp", "key_env": "OPENROUTER_API_KEY",
+      "openrouter_id": "deepseek/deepseek-v4-flash-vision-exp",
+      "price_in": 0.2156, "price_out": 0.6468, "price_note": "OpenRouter list price; explicitly experimental endpoint",
+      "image_method": "generic28", "text_token_factor": 1.0,
+      "extra_body": {"reasoning": {"effort": "low"}}, "est_reasoning_tokens": 3000,
+      "context": "1.05M", "open_weights": false, "first_pass": true,
+      "vision": {"arena_vision": null, "charxiv_r": null, "chartography": null, "mmmu_pro": null},
+      "vision_note": "Image input confirmed; explicitly experimental; no chart-specific benchmark located"
     }
   ]
 }

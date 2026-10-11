@@ -42,18 +42,22 @@ def score_levels(gold: Sequence[float], predicted: Sequence[float], price: float
 
 
 def score_runs(runs: List[Dict], items: Dict[str, Dict], tol_atrs: Sequence[float] = TOLERANCES) -> pd.DataFrame:
-    """One row per successful run with metrics; failed or unparseable runs score zero and are flagged."""
+    """One row per run with metrics; failed or unparseable runs score zero and are flagged."""
     rows = []
     for r in runs:
         item = items.get(r["item"])
         if item is None:
             continue
         levels = [lv["price"] for lv in (r.get("levels") or [])]
-        parsed_ok = r.get("status") == "ok" and bool(r.get("levels") is not None) and not r.get("parse_failed", False)
-        base = {"model": r["model"], "item": r["item"], "repeat": r.get("repeat", 0), "status": r.get("status"),
-                "parse_failed": bool(r.get("parse_failed", False)), "cost_usd": r.get("cost_usd") or 0.0,
-                "latency_s": r.get("latency_s"), "in_tokens": r.get("input_tokens"),
-                "out_tokens": r.get("output_tokens")}
+        parsed_ok = r.get("status") == "ok" and not r.get("parse_failed", False)
+        base = {"model": r["model"], "split": r.get("split") or "manifest",
+                "shots": r.get("shots") or "", "n_shots": r.get("n_shots", 0),
+                "prompt": r.get("prompt") or "", "item": r["item"], "repeat": r.get("repeat", 0),
+                "status": r.get("status"), "parse_failed": bool(r.get("parse_failed", False)),
+                "finish_reason": r.get("finish_reason") or "", "error": r.get("error") or "",
+                "cost_usd": r.get("cost_usd") or 0.0, "latency_s": r.get("latency_s"),
+                "in_tokens": r.get("input_tokens"), "out_tokens": r.get("output_tokens"),
+                "reasoning_tokens": r.get("reasoning_tokens")}
         if r.get("status") != "ok":
             base.update({"n_gold": len([g for g in item["gold_levels"] if g > item["price"]])})
             rows.append(base)
@@ -67,12 +71,14 @@ def leaderboard(scores: pd.DataFrame, primary: float = PRIMARY_TOL) -> pd.DataFr
     if scores.empty:
         return pd.DataFrame()
     t = f"{primary:g}"
-    ok = scores[scores["status"] == "ok"]
+    group_cols = ["model", "split", "shots", "prompt"]
     rows = []
-    for model, g in scores.groupby("model"):
-        gk = ok[ok["model"] == model]
+    for keys, g in scores.groupby(group_cols, dropna=False):
+        model, split, shots, prompt = keys
+        gk = g[g["status"] == "ok"]
         rows.append({
-            "model": model, "runs": len(g), "ok": len(gk),
+            "model": model, "split": split, "shots": shots, "prompt": prompt,
+            "runs": len(g), "ok": len(gk),
             "api_fail": int((g["status"] != "ok").sum()), "parse_fail": int(g["parse_failed"].sum()),
             f"precision@{t}": gk[f"precision@{t}"].mean() if len(gk) else np.nan,
             f"recall@{t}": gk[f"recall@{t}"].mean() if len(gk) else np.nan,
@@ -85,5 +91,6 @@ def leaderboard(scores: pd.DataFrame, primary: float = PRIMARY_TOL) -> pd.DataFr
             "avg_gold": gk["n_gold"].mean() if len(gk) else np.nan,
             "cost_usd": g["cost_usd"].sum(), "usd_per_run": g["cost_usd"].mean(),
             "avg_latency_s": g["latency_s"].mean(),
+            "reasoning_tokens": g["reasoning_tokens"].sum() if "reasoning_tokens" in g else np.nan,
         })
     return pd.DataFrame(rows).sort_values(f"f1@{t}", ascending=False).reset_index(drop=True)

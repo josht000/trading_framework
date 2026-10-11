@@ -61,20 +61,57 @@ Worked examples (last close, then the labelled levels):
 Answer with JSON only, no markdown and no commentary:
 {"resistance_levels":[{"price":<number>,"confidence":<0 to 1>,"reason":"<at most 12 words>"}]}"""
 
-PROMPTS = {"rubric": RUBRIC, "plain": PLAIN, "fewshot": FEWSHOT}
+LEARNED = """You are an experienced US equity swing trader reviewing daily charts.
+
+The conversation may contain worked examples. Each worked-example user turn contains one daily candlestick chart and the OHLCV table for exactly the bars shown. The following assistant turn contains the analyst's reasoning and the labelled answer. Learn the reasoning style and level-selection rules from those examples. The final user turn is the chart to evaluate.
+
+Task for the final chart only: list the horizontal RESISTANCE levels the price could run into as it moves UP from the last close. A resistance level is a price ceiling where selling pressure previously stopped an advance. Only list levels ABOVE the last close.
+
+How to identify them:
+- prior swing highs where price reversed down
+- areas where price was rejected at least twice; give ONE price for the area, the highest price in it
+- tight multi-day ranges whose upper or lower boundary later acted as a ceiling
+- sharp spike highs and high-volume rejection highs
+- psychological round numbers only when price action clustered at or just under them
+
+Rules:
+- Use exact prices read from the OHLCV table, normally the high or low of the relevant bar.
+- Order levels from nearest above the last close to farthest.
+- Prefer fewer, well-supported levels over many weak ones; give at most 10.
+- Do not copy levels from the worked examples unless the final chart's own data supports them.
+- Do not use outside knowledge of the stock.
+
+Answer in the same style as the worked-example assistant turns: first write a few concise sentences of chart reasoning, then output one JSON object with no markdown:
+{"resistance_levels":[{"price":<number>,"confidence":<0 to 1>,"reason":"<at most 12 words>"}]}"""
+
+PROMPTS = {"rubric": RUBRIC, "plain": PLAIN, "fewshot": FEWSHOT, "learned": LEARNED}
 
 
-def packet_text(item: Dict, ohlcv_csv: str) -> str:
-    """Neutral data block. The ticker is deliberately omitted to limit recall of the stock's later history."""
-    return (f"Daily bars: {item['n_bars']} (from {item['first_date']} to {item['last_date']}).\n"
-            f"Last bar date: {item['last_date']}. Last close: {item['price']:.2f}.\n\n"
-            f"OHLCV (date,open,high,low,close,volume):\n{ohlcv_csv.strip()}")
-
-
-def build_prompt(variant: str, item: Dict, ohlcv_csv: str) -> str:
+def build_system_prompt(variant: str = "rubric", user_text: str = "") -> str:
+    """Shared instructions for every request; user_text is optional shared analyst notes."""
     if variant not in PROMPTS:
         raise ValueError(f"unknown prompt variant {variant!r}; choose from {sorted(PROMPTS)}")
-    return PROMPTS[variant] + "\n\n" + packet_text(item, ohlcv_csv)
+    parts = [PROMPTS[variant]]
+    if user_text.strip():
+        parts.append("Additional analyst notes and rules supplied by the user:\n" + user_text.strip())
+    parts.append("If earlier messages contain worked examples, use them only as demonstrations. "
+                 "Analyze and answer for the chart in the final user message only.")
+    return "\n\n".join(parts)
+
+
+def packet_text(item: Dict, ohlcv_csv: str, explanation: str = "") -> str:
+    """Neutral data block. The ticker is deliberately omitted to limit recall of the stock's later history."""
+    text = (f"Daily bars: {item['n_bars']} (from {item['first_date']} to {item['last_date']}).\n"
+            f"Last bar date: {item['last_date']}. Last close: {item['price']:.2f}.\n\n"
+            f"OHLCV (date,open,high,low,close,volume):\n{ohlcv_csv.strip()}")
+    if explanation.strip():
+        text += "\n\nAnalyst notes for this chart:\n" + explanation.strip()
+    return text
+
+
+def build_prompt(variant: str, item: Dict, ohlcv_csv: str, explanation: str = "", user_text: str = "") -> str:
+    """Backward-compatible single-string prompt used by older callers."""
+    return build_system_prompt(variant, user_text) + "\n\n" + packet_text(item, ohlcv_csv, explanation)
 
 
 def _balanced_end(text: str, start: int, open_ch: str, close_ch: int) -> int:

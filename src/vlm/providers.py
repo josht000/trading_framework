@@ -7,8 +7,9 @@ HTTP adapters for the VLM APIs (no vendor SDKs, just `requests`).
   openrouter        chat_compat against OpenRouter (usage accounting requested so real cost comes back)
   mock              offline stand-in for tests; never contacts a network
 
-Payload builders and response parsers are pure functions so they can be unit-tested without a network.
-API keys are read from the environment by the caller and are never logged or stored.
+Each call contains one evaluated chart. Optional worked examples are sent before it as alternating
+user/assistant turns. Payload builders and response parsers are pure functions so they can be tested
+without a network. API keys are read from the environment by the caller and are never logged or stored.
 """
 
 import base64
@@ -16,7 +17,7 @@ import json
 import random
 import time
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import requests
 
@@ -39,19 +40,30 @@ class ProviderResult:
     reasoning_tokens: int = 0
     reported_cost: Optional[float] = None
     raw: Dict = field(default_factory=dict)
+    finish_reason: str = ""
 
 
 def b64(png: bytes) -> str:
     return base64.b64encode(png).decode("ascii")
 
 
-def build_anthropic_payload(spec: ModelSpec, prompt: str, png: bytes, max_tokens: int) -> Dict:
-    payload = {
-        "model": spec.api_model, "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64(png)}},
-            {"type": "text", "text": prompt}]}],
-    }
+def build_anthropic_payload(spec: ModelSpec, prompt: str, png: bytes, max_tokens: int,
+                            system: str = "", shots: Optional[List[Dict]] = None) -> Dict:
+    payload = {"model": spec.api_model, "max_tokens": max_tokens, "messages": []}
+    if system:
+        payload["system"] = system
+    shots = shots or []
+    for i, shot in enumerate(shots):
+        payload["messages"].append({"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64(shot["png"])}},
+            {"type": "text", "text": shot["text"]}]})
+        answer_block = {"type": "text", "text": shot["answer"]}
+        if i == len(shots) - 1:
+            answer_block["cache_control"] = {"type": "ephemeral"}
+        payload["messages"].append({"role": "assistant", "content": [answer_block]})
+    payload["messages"].append({"role": "user", "content": [
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64(png)}},
+        {"type": "text", "text": prompt}]})
     if "effort" in spec.extra_body:
         payload["output_config"] = {"effort": spec.extra_body["effort"]}
     return payload
@@ -60,16 +72,26 @@ def build_anthropic_payload(spec: ModelSpec, prompt: str, png: bytes, max_tokens
 def parse_anthropic(resp: Dict) -> ProviderResult:
     text = "".join(b.get("text", "") for b in resp.get("content", []) if b.get("type") == "text")
     u = resp.get("usage", {})
-    return ProviderResult(text, int(u.get("input_tokens", 0)), int(u.get("output_tokens", 0)), 0, None, resp)
+    return ProviderResult(text, int(u.get("input_tokens", 0)), int(u.get("output_tokens", 0)), 0, None, resp,
+                          resp.get("stop_reason") or "")
 
 
-def build_openai_payload(spec: ModelSpec, prompt: str, png: bytes, max_tokens: int) -> Dict:
-    payload = {
-        "model": spec.api_model, "max_output_tokens": max_tokens,
-        "input": [{"role": "user", "content": [
-            {"type": "input_text", "text": prompt},
-            {"type": "input_image", "image_url": f"data:image/png;base64,{b64(png)}", "detail": "high"}]}],
-    }
+def build_openai_payload(spec: ModelSpec, prompt: str, png: bytes, max_tokens: int,
+                         system: str = "", shots: Optional[List[Dict]] = None) -> Dict:
+    payload = {"model": spec.api_model, "max_output_tokens": max_tokens, "input": []}
+    if system:
+        payload["input"].append({"role": "developer", "content": [{"type": "input_text", "text": system}]})
+    shots = shots or []
+    for shot in shots:
+        payload["input"].append({"role": "user", "content": [
+            {"type": "input_image", "image_url": f"data:image/png;base64,{b64(shot['png'])}", "detail": "high"},
+            {"type": "input_text", "text": shot["text"]}]})
+        payload["input"].append({"role": "assistant", "content": [{"type": "output_text", "text": shot["answer"]}]})
+    payload["input"].append({"role": "user", "content": [
+        {"type": "input_image", "image_url": f"data:image/png;base64,{b64(png)}", "detail": "high"},
+        {"type": "input_text", "text": prompt}]})
+    if shots:
+        payload["prompt_cache_key"] = "vlm-resistance-fewshot"
     if "effort" in spec.extra_body:
         payload["reasoning"] = {"effort": spec.extra_body["effort"]}
     return payload
@@ -82,17 +104,25 @@ def parse_openai(resp: Dict) -> ProviderResult:
             parts += [c.get("text", "") for c in item.get("content", []) if c.get("type") == "output_text"]
     u = resp.get("usage", {})
     reasoning = int((u.get("output_tokens_details") or {}).get("reasoning_tokens", 0))
+    incomplete = (resp.get("incomplete_details") or {}).get("reason") or ""
     return ProviderResult("".join(parts), int(u.get("input_tokens", 0)), int(u.get("output_tokens", 0)),
-                          reasoning, None, resp)
+                          reasoning, None, resp, incomplete or resp.get("status") or "")
 
 
-def build_chat_payload(spec: ModelSpec, prompt: str, png: bytes, max_tokens: int) -> Dict:
-    payload = {
-        "model": spec.api_model, "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": [
-            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64(png)}"}},
-            {"type": "text", "text": prompt}]}],
-    }
+def build_chat_payload(spec: ModelSpec, prompt: str, png: bytes, max_tokens: int,
+                       system: str = "", shots: Optional[List[Dict]] = None) -> Dict:
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    for shot in shots or []:
+        messages.append({"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64(shot['png'])}"}},
+            {"type": "text", "text": shot["text"]}]})
+        messages.append({"role": "assistant", "content": shot["answer"]})
+    messages.append({"role": "user", "content": [
+        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64(png)}"}},
+        {"type": "text", "text": prompt}]})
+    payload = {"model": spec.api_model, "max_tokens": max_tokens, "messages": messages}
     payload.update(spec.extra_body)
     if spec.route == "openrouter":
         payload["usage"] = {"include": True}
@@ -100,15 +130,16 @@ def build_chat_payload(spec: ModelSpec, prompt: str, png: bytes, max_tokens: int
 
 
 def parse_chat(resp: Dict) -> ProviderResult:
-    choice = (resp.get("choices") or [{}])[0].get("message", {})
-    content = choice.get("content") or ""
+    first = (resp.get("choices") or [{}])[0]
+    content = (first.get("message") or {}).get("content") or ""
     if isinstance(content, list):
         content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
     u = resp.get("usage") or {}
     reasoning = int((u.get("completion_tokens_details") or {}).get("reasoning_tokens", 0) or 0)
     cost = u.get("cost")
     return ProviderResult(content, int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0)), reasoning,
-                          float(cost) if isinstance(cost, (int, float)) else None, resp)
+                          float(cost) if isinstance(cost, (int, float)) else None, resp,
+                          first.get("finish_reason") or "")
 
 
 def _post(url: str, headers: Dict, payload: Dict, timeout: float, retries: int) -> Dict:
@@ -128,26 +159,33 @@ def _post(url: str, headers: Dict, payload: Dict, timeout: float, retries: int) 
     raise ProviderError(f"gave up after {retries + 1} attempts ({last})")
 
 
-def call_model(spec: ModelSpec, prompt: str, png: bytes, api_key: str, max_tokens: int = 8000,
-               timeout: float = 240.0, retries: int = 3, item: Optional[Dict] = None) -> ProviderResult:
+def call_model(spec: ModelSpec, prompt: str, png: bytes, api_key: str, max_tokens: int = 16000,
+               timeout: float = 240.0, retries: int = 3, item: Optional[Dict] = None,
+               system: str = "", shots: Optional[List[Dict]] = None) -> ProviderResult:
+    if not isinstance(png, (bytes, bytearray)):
+        raise ProviderError("call_model expects exactly one query chart image")
+    png = bytes(png)
     if spec.route == "mock":
         return call_mock(spec, item or {})
     if spec.route == "anthropic":
         headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
         return parse_anthropic(_post(ANTHROPIC_URL, headers,
-                                     build_anthropic_payload(spec, prompt, png, max_tokens), timeout, retries))
+                                     build_anthropic_payload(spec, prompt, png, max_tokens, system, shots),
+                                     timeout, retries))
     if spec.route == "openai_responses":
         headers = {"Authorization": f"Bearer {api_key}", "content-type": "application/json"}
         return parse_openai(_post(OPENAI_URL, headers,
-                                  build_openai_payload(spec, prompt, png, max_tokens), timeout, retries))
+                                  build_openai_payload(spec, prompt, png, max_tokens, system, shots),
+                                  timeout, retries))
     if spec.route in ("chat_compat", "openrouter"):
         headers = {"Authorization": f"Bearer {api_key}", "content-type": "application/json"}
         return parse_chat(_post(spec.base_url.rstrip("/") + "/chat/completions", headers,
-                                build_chat_payload(spec, prompt, png, max_tokens), timeout, retries))
+                                build_chat_payload(spec, prompt, png, max_tokens, system, shots),
+                                timeout, retries))
     raise ProviderError(f"unknown route {spec.route!r}")
 
 
-MOCK_BEHAVIOURS = ("oracle", "noisy", "empty", "garbage")
+MOCK_BEHAVIOURS = ("oracle", "noisy", "empty", "garbage", "blank", "truncated")
 
 
 def mock_spec(kind: str) -> ModelSpec:
@@ -163,6 +201,11 @@ def call_mock(spec: ModelSpec, item: Dict) -> ProviderResult:
     gold, price, atr = item.get("gold_levels", []), item.get("price", 1.0), item.get("atr14", 0.1)
     rng = random.Random(f"{spec.key}|{item.get('id')}")
     kind = spec.api_model
+    if kind == "blank":
+        return ProviderResult("", 5000, 120, 0, raw={"mock": True}, finish_reason="stop")
+    if kind == "truncated":
+        return ProviderResult('{"resistance_levels":[{"price":5.5', 5000, 16000, 0,
+                              raw={"mock": True}, finish_reason="length")
     if kind == "oracle":
         levels = [round(g, 2) for g in gold]
     elif kind == "noisy":
@@ -171,6 +214,7 @@ def call_mock(spec: ModelSpec, item: Dict) -> ProviderResult:
     elif kind == "empty":
         levels = []
     else:
-        return ProviderResult("I cannot comment on this chart.", 5000, 20, 0)
+        return ProviderResult("I cannot comment on this chart.", 5000, 20, 0, raw={"mock": True},
+                              finish_reason="stop")
     text = json.dumps({"resistance_levels": [{"price": p, "confidence": 0.5, "reason": "mock"} for p in levels]})
-    return ProviderResult(text, 5000, 120, 0)
+    return ProviderResult(text, 5000, 120, 0, raw={"mock": True}, finish_reason="stop")
