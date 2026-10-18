@@ -1,5 +1,17 @@
 # Setup Instructions
 
+## Python setup in the Pytorch 2.8 container from RunPod
+
+```bash
+cd /workspace
+git clone git@github.com:josht000/trading_framework.git && cd trading_framework
+
+python -m virtualenv --system-site-packages "$HOME/.venvs/trading"
+source "$HOME/.venvs/trading/bin/activate"
+python -m pip install -r /workspace/trading_framework/requirements.txt
+```
+
+
 ## Alpaca API Setup
 
 1. Sign up for a free Alpaca account at https://alpaca.markets/

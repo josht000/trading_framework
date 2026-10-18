@@ -1,0 +1,2 @@
+- Always add scripts to the scripts folder
+- Envs should always be repeatble so the requirements.txt and other install/setup scripts need to be kept up to date. Notify the user (me) if updates are needed here. 
