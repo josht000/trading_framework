@@ -13,12 +13,17 @@ A Python-based automated trading framework for backtesting, simulating, and live
 - **Multi-Symbol Support**: Backtest multiple symbols simultaneously
 - **Resistance Research**: Interactive detector tooling (`research_resistance.py`), a hand-labeled chart dataset (`data/resistance_dataset/`), and a browser labeling server (`label_charts.py`)
 - **VLM Benchmark**: Harness for scoring vision-language models on resistance-level reading (`vlm_benchmark.py`)
+- **Point-in-time dataset**: Survivorship-aware 2-year daily + candidate-day 1-minute dataset built from free sources (`build_pit_dataset.py`, `data/pit/`) — delisted names included
+- **Realistic PIT backtest**: Parallel per-symbol screening with a cached `atr_pivot` ladder, volume-limited fills, slippage, exit-rule variants, and a locked final test set (`main.py`, `iterate.py`)
 
 ## Architecture
 
 ```
 trading_framework/
-├── main.py                   # Backtest application entry point
+├── main.py                   # Backtest entry point (point-in-time mode by default when data/pit exists)
+├── build_pit_dataset.py      # Build data/pit: reference, daily bars, candidates, candidate-day minute bars
+├── iterate.py                # Offline strategy iteration on per-trade tables (dev set) + one-shot test-set scoring
+├── chart_trades.py           # Best/worst trade charts: daily + 5-min with VWAP, atr_pivot levels, entry/exit
 ├── research_resistance.py    # Detector research CLI (ladder/chart/eval/labels/pick/config)
 ├── eval_pivot_resistance.py  # Score a detector on a resistance_dataset split
 ├── sweep_resistance.py       # Param-sweep detectors on train/val, save best scores
@@ -29,6 +34,7 @@ trading_framework/
 │   │   ├── alpaca_client.py    # Alpaca API client (daily/minute bars)
 │   │   ├── news_client.py      # Alpaca news client (per-symbol daily article counts)
 │   │   ├── simfin_store.py     # SimFin bulk store (as-of market cap / fundamentals)
+│   │   ├── pit_dataset.py      # Point-in-time dataset builders (Massive / MarketParquet / Alpaca)
 │   │   ├── sentiment_client.py # FMP social sentiment client (bonus flag, fails soft)
 │   │   └── finviz_screener.py  # Finviz screener (not used by historical backtests)
 │   ├── screening/            # Screening and level detectors
@@ -40,8 +46,11 @@ trading_framework/
 │   │   └── volume_profile.py   # Volume-at-price high-volume-node detector
 │   ├── strategies/           # Trading strategies
 │   │   └── humbled_bullish_overnight.py
-│   ├── backtest/             # Backtesting engine
-│   │   └── engine.py
+│   ├── backtest/             # Backtesting
+│   │   ├── engine.py           # vectorbt engine (symbol-list mode)
+│   │   ├── pit_runner.py       # PIT per-symbol worker: signals, fill model, exit variants, features; ladder cache
+│   │   ├── exit_variants.py    # Named exit-rule specs (after-hours stop/target, pre-market target, ...)
+│   │   └── pit_metrics.py      # Portfolio metrics, de-duplication of renamed tickers, sizing modes
 │   ├── research/             # Research tooling behind research_resistance.py
 │   │   ├── chart_levels.py     # Interactive plotly level charts
 │   │   ├── chart_png.py        # Static matplotlib PNG renderer (VLM packets)
@@ -64,6 +73,8 @@ trading_framework/
 │       └── helpers.py
 ├── tests/                    # unittest suite
 ├── data/
+│   ├── pit/                  # Point-in-time dataset (gitignored; see "Point-in-time dataset")
+│   ├── charts/trades/<variant>/  # Best/worst trade charts per exit variant (index.html in each)
 │   ├── cache/daily/          # Cached daily bars (gitignored)
 │   ├── resistance_dataset/   # Hand-labeled chart dataset (train/val/test)
 │   ├── simfin/               # SimFin bulk data cache (gitignored)
@@ -196,7 +207,7 @@ All criteria are evaluated once per date at 15:55 America/New_York, using only p
 - Current cumulative relative volume >= 2x the prior 20-day average
 - Close higher than the prior close
 - Session open above the prior close
-- Breakout above the prior 20-day high
+- Breakout above resistance (prior 20-day high, or an `atr_pivot` level; see below)
 - Close above the session VWAP
 - Market cap <= $2B as-of the screen date (SimFin: Close * Shares Outstanding). Controlled by `REQUIRE_MARKET_CAP` (0/1); missing data passes unless required
 - News catalyst: >= `MIN_NEWS_ARTICLES` articles within `NEWS_LOOKBACK_DAYS` (defaults: 1 article / 3 days), from Alpaca news per-day counts. `REQUIRE_NEWS=0` disables
@@ -206,11 +217,94 @@ All criteria are evaluated once per date at 15:55 America/New_York, using only p
 
 Historical NASDAQ membership and sector hype are not available from the current data sources and are explicitly not yet enforced. Social sentiment is implemented as a non-blocking bonus flag (`social_surge`) rather than a hard entry criterion.
 
+Breakout resistance has two methods (`RESISTANCE_METHOD`, default `atr_pivot` in `main.py`):
+
+- `rolling`: close above the prior 20-day high.
+- `atr_pivot`: the 15:55 price is above an `atr_pivot` level (`src/screening/resistance.py`, sweep-tuned config `ATR_PIVOT_CONFIG` in `historical.py`) that sat above the prior close. Levels come only from daily bars through the prior session, with pivots usable `pivot_right` bars after they form, so nothing leaks from the future. `MIN_BREAKOUT_ATR` adds an optional buffer above the level.
+
 ### Entry Timing
 - Enter on the 15:55 ET bar when all criteria pass
 
 ### Exit Timing
-- Exit on the first regular-session bar of the next trading date
+- Default: exit on the first regular-session bar of the next trading date
+- PIT mode adds named exit variants (`src/backtest/exit_variants.py`), all evaluated on the same entries:
+  - after-hours stop/target: during 16:00 to 16:00+`window_min` ET, exit at the first 1-minute close that is `stop` below or `target` above the entry price (v2: 45 min, -12% / +50%)
+  - pre-market target (`pm_target`): if no after-hours exit fired, take profit at the first next-day pre-market bar `pm_target` above entry (pm_target25_v2: +25%)
+  - pre-market stop (`pm_stop`), ATR-scaled stop, N-bar stop confirmation (all tested; see lessons)
+
+## Point-in-time dataset (`data/pit/`, gitignored)
+
+A fixed ticker list is survivor-biased, so PIT mode screens every symbol that was tradable on each date, including ones later delisted. Built by `build_pit_dataset.py` (all steps resumable):
+
+| step | command | output |
+|---|---|---|
+| ticker reference | `python build_pit_dataset.py reference` | `reference.parquet`: Massive reference for every stock ticker, active and inactive, with `delisted_utc`, `type`, `list_date`. Free plan; ~12.5 s per call (5 calls/min) |
+| daily bars | `... alpaca-daily` | `alpaca_daily/part_*.parquet`: split-adjusted SIP daily bars for every ticker listed any time since 2024-09-01 (types such as warrants, rights, units, ETFs, funds, preferred dropped). Alpaca returns bars for delisted tickers up to their last trading day |
+| other sources | `... massive`, `... mp` | `massive_daily/DATE.parquet` (grouped daily; free window ~2 years, slow) and `mp_daily/DATE.parquet` (MarketParquet free sample, last 365 days). Used only to fill gaps / cross-check |
+| merge | `... build` | `daily_pit.parquet`: `date, symbol, open, high, low, close, volume, trade_count, vwap, src, type, primary_exchange, delisted_utc` (Alpaca first, then Massive, then MarketParquet) |
+| prefilter | `... candidates` | `candidates.parquet` (`date, symbol`): daily-only screen (price $2-$20, 20d avg volume >= 500k, volume >= 2x average, close and open above prior close, rolling-20 high **or** `atr_pivot` breakout) |
+| minute bars | `... alpaca-minute` | `alpaca_minute/DATE.parquet`: 1-minute SIP bars (incl. extended hours) for the candidate symbols of that date, signal session plus next session. `timestamp` is America/New_York |
+| checks | `... validate` | `report.txt`: coverage, cross-source agreement, known delistings, yfinance cross-check |
+
+Notes and caveats:
+
+- Delisted names: Massive's free reference list carries delisting dates for old and new tickers; Alpaca serves bars for them. MarketParquet's free sample was **missing** names acquired inside its window (K, EA, CMA, HOLX, DAY), so it is only a gap-filler. Older Massive records have no `type`; the universe is built without a `type=CS` filter.
+- Ticker changes leave the same company under two symbols with identical bars. `pit_metrics.dedupe_trades` drops these (about 9% of trades before de-duplication).
+- Rows are 2024-09 to now (Massive's free window limits grouped bars; the Alpaca pull itself is not limited and could go back further).
+- Not covered: news history for delisted names (Alpaca news is nearly empty for them), delisting returns, historical float and borrow data.
+
+## Running the PIT backtest (`main.py`)
+
+`python main.py` uses `data/pit` automatically (`BACKTEST_MODE=symbols` forces the old symbol-list mode). Relevant environment variables:
+
+| variable | default | meaning |
+|---|---|---|
+| `RESISTANCE_METHOD` | `atr_pivot` | `atr_pivot` or `rolling` |
+| `EXIT_VARIANTS` | `v2` | comma list of names from `exit_variants.py`, or `all` |
+| `PROCESSES` | cpu count - 1 | worker processes (`1` runs in-process) |
+| `LADDER_CACHE` | `1` | cache `atr_pivot` level tops per symbol/date in `data/pit/ladder_cache/` |
+| `SIZE_USD` / `PARTICIPATION` | 20000 / 0.10 | position size per trade; max share of each 1-minute bar's volume |
+| `SLIP_RTH` / `SLIP_EXT` | 0.0015 / 0.004 | slippage per side, regular / extended hours (estimates, no quote data) |
+| `MIN_FILL` | 0.25 | entries filling less than this fraction by 15:59 are skipped |
+| `BACKTEST_COMMISSION` | 0.001 | per side |
+| `BACKTEST_SET` | `dev` | `dev`, `test`, or `all` (see evaluation protocol) |
+| `MAX_POSITIONS_PER_DAY` | 5 | portfolio keeps the top N trades per day by relative volume |
+
+Runtime: about 100 s for the full run (startup ~55 s, the rest parallel screening). Lazy evaluation skips the `atr_pivot` ladder on days that already fail the cheap criteria.
+
+Fill model: entry builds the position over 15:55-15:59 and exits sell bar by bar, each taking at most `PARTICIPATION` of that minute's volume at the bar close moved against us by the slippage. Portfolio: equal weight over the day's top N trades, fully invested overnight, compounding. Per-trade CSVs go to `results/pit_trades_atr_pivot_<variant>.csv` (with entry-time features such as `sig_day_ret`, `atr_pct`, `range_pct` and path columns `ah45_*`, `pm_last`, `open_ret`).
+
+### Evaluation protocol: dev set and locked final test set
+
+- The last 3 months of data (`TEST_MONTHS`, currently 2026-07-16 onward) are a final test set. `main.py` writes those trades to `results/holdout/` and never summarizes them unless `BACKTEST_SET=test|all`. All tuning uses the dev set only.
+- `python iterate.py` runs 12 iterations per base strategy on dev; `python iterate.py --test NAME,...` scores chosen specs on the test set. Benchmark the test set rarely and only with candidates already picked on dev.
+- This is standard practice (a chronological holdout, not a random split, because returns are time-ordered). With ~250 trades over 61 days the test set is small and noisy, so treat it as a sanity check, not a precise estimate.
+- Caveat: v1, v2 and pm_target25 were first compared on the full two years before the holdout existed, so the test months are not pristine for those three. Anything built after the split is clean.
+- Dev set also gets a split-half check (`sharpe_h1/h2`, `dd_h1/h2` in `results/iterations_dev.csv`) to flag results that rely on one half of the data.
+
+## Backtest results and lessons (atr_pivot, point-in-time universe)
+
+Dev set 2024-10-18 to 2026-07-15, realistic fills (0.15% / 0.4% slippage, 0.1% commission per side, volume-limited), top 5/day by relative volume:
+
+| strategy | trades | total | max DD | Sharpe |
+|---|--:|--:|--:|--:|
+| v1: exit at next open | 2,202 | +56% | -61% | 0.69 |
+| v2: after-hours stop -12% / target +50% (45 min) | 2,202 | +86% | -47% | 0.79 |
+| pm_target25_v2: v2 + next-day pre-market target +25% | 2,202 | +153% | -43% | 0.99 |
+| pm_target25_v2 + stop -15% | 2,202 | +170% | -43% | 1.03 |
+| pm_target25_v2 + stop -15% + 1/5-capital slots | 2,202 | +94% | -36% | 0.90 |
+
+Final test set (last 3 months, 254 trades): v2 -52% (max DD -62%, Sharpe -2.6), pm_target25_v2 -50% (-61%, -2.6), pm_target25_v2 + stop -15% + slots -24% (-29%, -2.1). No tested variant made money there.
+
+Lessons:
+
+- **Costs decide everything.** Before costs the strategy earned about +0.2% per trade. Total return for v2 / pm_target25_v2 at slippage 0 / 0.1%-0.3% / 0.15%-0.4% / 0.3%-0.6% (regular/extended): +465% / +144% / +61% / -55% and +723% / +243% / +124% / -38%. Earlier results without slippage and volume limits were far too optimistic.
+- **Data hygiene:** renamed tickers double-counted ~9% of trades; the MarketParquet free sample drops acquired names; a `type=CS` filter silently drops older delisted names; a first-day drawdown was missed until the equity curve started from 1.0.
+- **After-hours/overnight news dominates tails:** the worst trades are mostly after-close offerings or overnight gap-downs (e.g. SIDU after a +96% contract spike and a same-night $25M offering); the best are overnight gap-ups on news (INTZ, BATL, ZENA, LASE, GRML). A 12% after-hours stop trims the tail but sells ~half of positions that later recover.
+- **Losers look "overheated":** top-20 losers had median signal-day move +53% (all trades +16%), daily ATR 12% of price (vs 7%), intraday range 46% (vs 16%), 4x the day's dollar volume. Hard filters on those features did **not** help (they cut winners as much as losers; every filter lowered Sharpe).
+- **Pre-market stops hurt:** a -15% pre-market stop destroyed returns (thin books, recoveries after the open); the pre-market *target* helped.
+- **Drawdown reduction is mostly de-risking:** the only things that lowered max DD were smaller positions (1/5 slots, inverse-ATR weighting), which also cut return; Sharpe did not improve. The strategy's edge is small and appears to have faded in the final months.
+- **Premature optimization of rules:** nine exit rule sets on the same two years is enough to overfit; prefer the dev/test protocol above.
 
 ## Data Sources
 
@@ -407,7 +501,7 @@ The suite uses `unittest` (no pytest required):
 C:\data\envs\trading_framework\Scripts\python.exe -m unittest discover -s tests
 ```
 
-Covers the backtest engine, historical strategy screening, the resistance detectors (atr_pivot, volume_profile, pivot_resistance), and the VLM benchmark internals (scoring, providers, runner, reports) — 88 tests.
+Covers the backtest engine, historical strategy screening, the resistance detectors (atr_pivot, volume_profile, pivot_resistance), the PIT fill model and metrics (volume-limited fills, ticker-change de-duplication, sizing modes), and the VLM benchmark internals (scoring, providers, runner, reports) — 93 tests.
 
 ## Utility scripts
 
