@@ -41,8 +41,8 @@ def summarize(t, max_pos=5, rank="rel_vol", sizing="full", all_days=None):
     r = t["ret"]
     wins, losses = r[r > 0], r[r <= 0]
     per_day = daily_returns(t, max_pos, rank, sizing, all_days)
-    equity = (1 + per_day).cumprod()
-    dd = float((equity / equity.cummax() - 1).min()) if len(equity) else float("nan")
+    equity = pd.concat([pd.Series([1.0]), (1 + per_day).cumprod().reset_index(drop=True)], ignore_index=True)
+    dd = float((equity / equity.cummax() - 1).min()) if len(per_day) else float("nan")
     total = float(equity.iloc[-1] - 1) if len(equity) else float("nan")
     sd = per_day.std()
     return {
