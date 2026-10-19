@@ -20,3 +20,13 @@ python-dotenv>=1.0.0
 pytz>=2023.3
 simfin
 plotly==7.1.0
+
+accelerate==1.14.0
+bitsandbytes==0.50.0
+fastapi==0.142.2
+Pillow==12.3.0
+torch==2.8.0
+torchvision==0.23.0
+transformers==5.18.0
+uvicorn==0.54.0
+huggingface_hub>=1.0.0
