@@ -45,6 +45,9 @@ class HumbledBullishOvernight:
         require_market_cap: bool = False,
         require_news_catalyst: bool = True,
         social_surge_factor: float = 2.0,
+        resistance_method: str = "rolling",
+        min_breakout_atr: float = 0.0,
+        lazy_resistance: bool = False,
     ):
         """
         Initialize strategy parameters
@@ -79,6 +82,9 @@ class HumbledBullishOvernight:
             require_market_cap=require_market_cap,
             require_news_catalyst=require_news_catalyst,
             social_surge_factor=social_surge_factor,
+            resistance_method=resistance_method,
+            min_breakout_atr=min_breakout_atr,
+            lazy_resistance=lazy_resistance,
         )
 
     def calculate_vwap(self, df: pd.DataFrame) -> pd.Series:
@@ -235,9 +241,12 @@ class HumbledBullishOvernight:
         daily_df: pd.DataFrame,
         intraday_df: pd.DataFrame,
         context: Optional[Dict] = None,
+        entry_dates: Optional[set] = None,
     ) -> pd.DataFrame:
         """
         Args:
+            entry_dates: optional set of session dates; entries are only allowed on these dates,
+                and exits must land on the next trading day of daily_df
             daily_df: Daily OHLCV DataFrame
             intraday_df: Intraday (1-min) OHLCV DataFrame
             context: Optional dict of point-in-time Series keyed by date:
@@ -271,14 +280,24 @@ class HumbledBullishOvernight:
         entry_signals = screen["eligible"].reindex(
             intraday_with_signals.index, fill_value=False
         )
+        if entry_dates is not None:
+            entry_signals = entry_signals & pd.Series(
+                [d in entry_dates for d in entry_signals.index.date], index=entry_signals.index
+            )
         exit_signals = pd.Series(False, index=intraday_with_signals.index)
         session_dates = pd.Index(intraday_with_signals.index.date)
         available_dates = pd.Index(session_dates.unique()).sort_values()
+        daily_dates = pd.Index(pd.DatetimeIndex(daily_df.index).date) if entry_dates is not None else None
         for entry_index in entry_signals[entry_signals].index:
             later_dates = available_dates[available_dates > entry_index.date()]
             if later_dates.empty:
                 continue
             next_date = later_dates[0]
+            if daily_dates is not None:
+                next_daily = daily_dates[daily_dates > entry_index.date()]
+                if not next_daily.empty and next_daily[0] != next_date:
+                    entry_signals.at[entry_index] = False
+                    continue
             next_session = intraday_with_signals.loc[session_dates == next_date]
             regular_session = next_session.between_time(
                 "09:30", self.early_morning_end, inclusive="both"

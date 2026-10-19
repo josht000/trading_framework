@@ -3,6 +3,16 @@ from datetime import time
 import numpy as np
 import pandas as pd
 
+from src.screening.resistance import ResistanceConfig, ResistanceDetector
+
+ATR_PIVOT_CONFIG = ResistanceConfig(
+    pivot_left=3,
+    pivot_right=3,
+    min_prominence_atr=0.5,
+    merge_atr=0.3,
+    include_ranges=False,
+)
+
 
 class HistoricalPriceVolumeScreener:
     def __init__(
@@ -21,7 +31,20 @@ class HistoricalPriceVolumeScreener:
         require_market_cap=False,
         require_news_catalyst=True,
         social_surge_factor=2.0,
+        resistance_method="rolling",
+        resistance_config=None,
+        min_breakout_atr=0.0,
+        lazy_resistance=False,
     ):
+        self.lazy_resistance = lazy_resistance
+        self.ladder_cache = None
+        self.resistance_method = resistance_method
+        self.min_breakout_atr = min_breakout_atr
+        self.detector = (
+            ResistanceDetector(resistance_config or ATR_PIVOT_CONFIG)
+            if resistance_method == "atr_pivot"
+            else None
+        )
         self.min_price = min_price
         self.max_price = max_price
         self.min_average_volume = min_average_volume
@@ -36,6 +59,19 @@ class HistoricalPriceVolumeScreener:
         self.require_market_cap = require_market_cap
         self.require_news_catalyst = require_news_catalyst
         self.social_surge_factor = social_surge_factor
+
+    def _level_uppers(self, prepared, session_date):
+        """ATR and the top of every atr_pivot zone known before session_date (cached per date)."""
+        cache = self.ladder_cache
+        if cache is not None and session_date in cache:
+            return cache[session_date]
+        k = self.detector.known_through_before(prepared, session_date)
+        atr = float(prepared.atr[k]) if k >= 0 else np.nan
+        lv = self.detector.levels(prepared, k)
+        out = (atr, lv["upper"].to_numpy(dtype=float))
+        if cache is not None:
+            cache[session_date] = out
+        return out
 
     def scan(self, daily_df, minute_df, context=None):
         daily = self._prepare(daily_df)
@@ -62,6 +98,7 @@ class HistoricalPriceVolumeScreener:
         result["eligible"] = False
 
         daily_dates = pd.Index(daily.index.date)
+        prepared = self.detector.prepare(daily) if self.detector else None
         for session_date, session in minute.groupby(minute.index.date, sort=True):
             candidates = session[session.index.time == self.entry_time]
             if candidates.empty:
@@ -87,6 +124,23 @@ class HistoricalPriceVolumeScreener:
             relative_volume = (
                 cumulative_volume / average_volume if average_volume > 0 else np.nan
             )
+            if prepared is not None:
+                cheap_pass = (
+                    self.min_price <= candidate["close"] <= self.max_price
+                    and average_volume >= self.min_average_volume
+                    and relative_volume >= self.min_relative_volume
+                    and candidate["close"] > previous_close
+                    and session_open > previous_close
+                )
+                if self.lazy_resistance and not cheap_pass:
+                    resistance = float("inf")
+                else:
+                    atr, uppers = self._level_uppers(prepared, session_date)
+                    crossed = uppers[
+                        (uppers > previous_close)
+                        & (uppers + self.min_breakout_atr * atr < candidate["close"])
+                    ]
+                    resistance = float(crossed.max()) if len(crossed) else float("inf")
             date_key = pd.Timestamp(session_date)
             caps = context["market_cap"]
             if caps.empty:

@@ -262,23 +262,31 @@ class MultiSymbolBacktest:
         # For now, assume data is already aligned
 
         # Build multi-symbol DataFrames
-        close_prices = pd.DataFrame()
-        entries = pd.DataFrame()
-        exits = pd.DataFrame()
+        def _clean(s):
+            s = s[~s.index.duplicated(keep="last")].sort_index()
+            if s.index.tz is not None:
+                s.index = s.index.tz_convert("UTC")
+            return s
 
-        for symbol in price_data.keys():
-            if "close" in price_data[symbol].columns:
-                close_prices[symbol] = price_data[symbol]["close"].astype(float)
-            else:
-                close_prices[symbol] = price_data[symbol].iloc[:, 0].astype(float)
+        closes = {}
+        for symbol, df in price_data.items():
+            col = df["close"] if "close" in df.columns else df.iloc[:, 0]
+            closes[symbol] = _clean(col.astype(float))
+        close_prices = pd.DataFrame(closes).sort_index().ffill()
 
-            entries[symbol] = entry_signals.get(symbol, pd.Series(False, index=close_prices.index)).astype(bool)
-            exits[symbol] = exit_signals.get(symbol, pd.Series(False, index=close_prices.index)).astype(bool)
+        def _signals(signals):
+            out = {}
+            for symbol in close_prices.columns:
+                s = signals.get(symbol)
+                out[symbol] = (
+                    _clean(s.astype(bool)).reindex(close_prices.index, fill_value=False)
+                    if s is not None
+                    else pd.Series(False, index=close_prices.index)
+                )
+            return pd.DataFrame(out)
 
-        # Fill missing values
-        close_prices = close_prices.ffill()
-        entries = entries.fillna(False)
-        exits = exits.fillna(False)
+        entries = _signals(entry_signals)
+        exits = _signals(exit_signals)
 
         # Create portfolio
         portfolio = vbt.Portfolio.from_signals(

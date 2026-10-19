@@ -84,10 +84,12 @@ class AlpacaNewsClient:
             )
             news_set = self.client.get_news(request)
 
-            if hasattr(news_set, "df"):
+            try:
                 df = news_set.df
-                if df is not None and not df.empty:
-                    frames.append(df)
+            except (KeyError, AttributeError):
+                df = None
+            if df is not None and not df.empty:
+                frames.append(df)
 
             page_token = getattr(news_set, "next_page_token", None)
             pages += 1
