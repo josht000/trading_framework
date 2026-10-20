@@ -242,6 +242,8 @@ A fixed ticker list is survivor-biased, so PIT mode screens every symbol that wa
 | daily bars | `... alpaca-daily` | `alpaca_daily/part_*.parquet`: split-adjusted SIP daily bars for every ticker listed any time since 2024-09-01 (types such as warrants, rights, units, ETFs, funds, preferred dropped). Alpaca returns bars for delisted tickers up to their last trading day |
 | other sources | `... massive`, `... mp` | `massive_daily/DATE.parquet` (grouped daily; free window ~2 years, slow) and `mp_daily/DATE.parquet` (MarketParquet free sample, last 365 days). Used only to fill gaps / cross-check |
 | merge | `... build` | `daily_pit.parquet`: `date, symbol, open, high, low, close, volume, trade_count, vwap, src, type, primary_exchange, delisted_utc` (Alpaca first, then Massive, then MarketParquet) |
+| market regime | `... market` | `market/{SPY,QQQ,IWM}_{daily,minute}.parquet`: daily bars from 2023-09 (200 SMA warm-up) and 1-minute bars (incl. extended hours) from 2024-10; `src/backtest/market_regime.py` turns them into 15:55 features (`spy_day`, `iwm_day`, `*_ret5/20`, `*_sma50/200_up`) |
+| news | `... news` | `news/news.parquet`: Alpaca (Benzinga) articles per candidate symbol (`symbol, created_at (UTC), headline, summary, source`). About 46% are generic mover lists / calendars, so company-specific filtering is done by headline keywords (see `explore.py`). No historical social sentiment is available from free sources |
 | prefilter | `... candidates` | `candidates.parquet` (`date, symbol`): daily-only screen (price $2-$20, 20d avg volume >= 500k, volume >= 2x average, close and open above prior close, rolling-20 high **or** `atr_pivot` breakout) |
 | minute bars | `... alpaca-minute` | `alpaca_minute/DATE.parquet`: 1-minute SIP bars (incl. extended hours) for the candidate symbols of that date, signal session plus next session. `timestamp` is America/New_York |
 | checks | `... validate` | `report.txt`: coverage, cross-source agreement, known delistings, yfinance cross-check |
@@ -263,9 +265,11 @@ Notes and caveats:
 | `EXIT_VARIANTS` | `v2` | comma list of names from `exit_variants.py`, or `all` |
 | `PROCESSES` | cpu count - 1 | worker processes (`1` runs in-process) |
 | `LADDER_CACHE` | `1` | cache `atr_pivot` level tops per symbol/date in `data/pit/ladder_cache/` |
-| `SIZE_USD` / `PARTICIPATION` | 20000 / 0.10 | position size per trade; max share of each 1-minute bar's volume |
+| `SIZE_USD` / `PARTICIPATION` | 1250 / 0.10 | position size per trade; max share of each 1-minute bar's volume |
 | `SLIP_RTH` / `SLIP_EXT` | 0.0015 / 0.004 | slippage per side, regular / extended hours (estimates, no quote data) |
 | `MIN_FILL` | 0.25 | entries filling less than this fraction by 15:59 are skipped |
+| `LOOKBACK_BARS` | 252 (detector default) | `atr_pivot` lookback in daily bars; 273 = 13 months. Regenerate candidates with `build_pit_dataset.py candidates --lookback-bars 273` |
+| `RESULTS_TAG` | none | suffix for result files (`pit_trades_atr_pivot_<tag>_<variant>.csv`); `explore.py`, `plot_portfolio.py` read the same variable |
 | `BACKTEST_COMMISSION` | 0.001 | per side |
 | `BACKTEST_SET` | `dev` | `dev`, `test`, or `all` (see evaluation protocol) |
 | `MAX_POSITIONS_PER_DAY` | 5 | portfolio keeps the top N trades per day by relative volume |
@@ -274,9 +278,20 @@ Runtime: about 100 s for the full run (startup ~55 s, the rest parallel screenin
 
 Fill model: entry builds the position over 15:55-15:59 and exits sell bar by bar, each taking at most `PARTICIPATION` of that minute's volume at the bar close moved against us by the slippage. Portfolio: equal weight over the day's top N trades, fully invested overnight, compounding. Per-trade CSVs go to `results/pit_trades_atr_pivot_<variant>.csv` (with entry-time features such as `sig_day_ret`, `atr_pct`, `range_pct` and path columns `ah45_*`, `pm_last`, `open_ret`).
 
+### Account model ($5,000) and entry-filter research
+
+- Account: $5,000 start, at most 5 overnight positions, 20% of equity ($1,000) per trade, optionally 25% ($1,250) for high-conviction trades (5 x 25% = 1.25x gross, i.e. a little margin). Day-trade note: an after-hours exit on the entry day is a day trade, so a margin account under $25,000 is limited by the pattern-day-trader rule (4 per 5 days).
+- Objective is now "stay alive, higher hit rate": hit rate, profit factor, lowest balance, max drawdown, worst day, longest losing-day streak (`simulate_account` in `pit_metrics.py`).
+- `python explore.py` tests entry filters on the dev set (SPY/IWM/QQQ regime, stock vs 200 SMA / 9 / 20 EMA, news and dilution flags) with split-half columns; `--export NAME` writes the executed trades of a named strategy, `--test NAME` scores it once on the locked test set.
+- `python chart_trades.py --csv ... --out ...`: best/worst trade charts with daily 9 EMA (gray), 20 EMA (blue), 200 SMA (gold, labelled R/S relative to price), `atr_pivot` levels, 5-minute bars with purple session VWAP, entry/exit markers, and news headlines.
+- `python plot_portfolio.py NAME [--with-test]`: equity vs base, SPY and IWM, drawdown, daily P&L, rolling hit rate.
+- Trade ranking: `src/backtest/ranking.py` scores each candidate from components known at 15:55 (headroom to resistance, low float, price vs 200 SMA, IWM/SPY direction, company news, EDGAR 8-K positives, dilution/distress filings, theme heat). `RESULTS_TAG=lb13 python rank_test.py` runs the dev experiments (hygiene filters, thresholds, ablation, scalings as raw / integer -5..5 / normalized 0..1, sizing, random-search weight tuning, monthly walk-forward ridge weights) and writes `reports/ranking_report.md`; `python rank_final.py --test` scores the locked test period once, `--charts` writes the executed trades, portfolio plot, trade charts (`data/charts/trades/R3_*`) and a winning-trades report for R3 (`reports/ranked_R3/`). Extra features come from `src/backtest/features_extra.py`.
+- EDGAR and OTC data: `build_pit_dataset.py edgar` (SEC submissions: 8-K item codes, 424B/S-3 offering forms, NT 10-K/10-Q late filings; set `EDGAR_USER_AGENT="Name email"`) and `build_pit_dataset.py otc` (Massive OTC / pink-sheet tickers, excluded from trading).
+- Winning-trade report: `python fetch_enrichment.py` (yfinance sector, float, short interest, descriptions -> `data/pit/enrichment/`), then `RESULTS_TAG=lb13 python analyze_winners.py [--rebuild]` writes `reports/winning_trades_report.md` (+ `reports/figures`, `reports/tables`). Sections: profit concentration, timing clusters and regime change, earnings vs news vs themes, sectors and NMF topics, float and size, market link and hedge test, purged walk-forward gradient boosting, FDR rule mining, archetypes, event study, deflated Sharpe, dev vs test robustness. Code in `analyze_winners.py`, `winners_analysis.py`, `winners_models.py`.
+
 ### Evaluation protocol: dev set and locked final test set
 
-- The last 3 months of data (`TEST_MONTHS`, currently 2026-07-16 onward) are a final test set. `main.py` writes those trades to `results/holdout/` and never summarizes them unless `BACKTEST_SET=test|all`. All tuning uses the dev set only.
+- The last 4 months of data (`TEST_MONTHS`, currently 2026-06-16 onward) are a final test set. `main.py` writes those trades to `results/holdout/` and never summarizes them unless `BACKTEST_SET=test|all`. All tuning uses the dev set only.
 - `python iterate.py` runs 12 iterations per base strategy on dev; `python iterate.py --test NAME,...` scores chosen specs on the test set. Benchmark the test set rarely and only with candidates already picked on dev.
 - This is standard practice (a chronological holdout, not a random split, because returns are time-ordered). With ~250 trades over 61 days the test set is small and noisy, so treat it as a sanity check, not a precise estimate.
 - Caveat: v1, v2 and pm_target25 were first compared on the full two years before the holdout existed, so the test months are not pristine for those three. Anything built after the split is clean.
@@ -298,12 +313,16 @@ Final test set (last 3 months, 254 trades): v2 -52% (max DD -62%, Sharpe -2.6), 
 
 Lessons:
 
-- **Costs decide everything.** Before costs the strategy earned about +0.2% per trade. Total return for v2 / pm_target25_v2 at slippage 0 / 0.1%-0.3% / 0.15%-0.4% / 0.3%-0.6% (regular/extended): +465% / +144% / +61% / -55% and +723% / +243% / +124% / -38%. Earlier results without slippage and volume limits were far too optimistic.
+- **Costs decide everything.** Before costs the strategy earned about +0.2% per trade. Dev-set total return for v2 / pm_target25_v2 at slippage (regular/extended) 0 / 0.1%-0.3% / 0.15%-0.4% (default) / 0.3%-0.6%: +552% / +181% / +86% / -48% and +826% / +287% / +153% / -30%; max DD for v2 -39% / -44% / -47% / -78%. Earlier results without slippage and volume limits were far too optimistic.
 - **Data hygiene:** renamed tickers double-counted ~9% of trades; the MarketParquet free sample drops acquired names; a `type=CS` filter silently drops older delisted names; a first-day drawdown was missed until the equity curve started from 1.0.
 - **After-hours/overnight news dominates tails:** the worst trades are mostly after-close offerings or overnight gap-downs (e.g. SIDU after a +96% contract spike and a same-night $25M offering); the best are overnight gap-ups on news (INTZ, BATL, ZENA, LASE, GRML). A 12% after-hours stop trims the tail but sells ~half of positions that later recover.
 - **Losers look "overheated":** top-20 losers had median signal-day move +53% (all trades +16%), daily ATR 12% of price (vs 7%), intraday range 46% (vs 16%), 4x the day's dollar volume. Hard filters on those features did **not** help (they cut winners as much as losers; every filter lowered Sharpe).
 - **Pre-market stops hurt:** a -15% pre-market stop destroyed returns (thin books, recoveries after the open); the pre-market *target* helped.
 - **Drawdown reduction is mostly de-risking:** the only things that lowered max DD were smaller positions (1/5 slots, inverse-ATR weighting), which also cut return; Sharpe did not improve. The strategy's edge is small and appears to have faded in the final months.
+- **Market regime and the 200 SMA were the only filters that helped (dev set, $5,000 account):** pm_target25_v2 with the stock above its 200 SMA and IWM and SPY up at 15:55 (`S1`) took 664 trades with 43.8% hit rate, PF 1.54, +216%, max DD -18%, lowest balance $4,922 (base: 40.4%, PF 1.12, +84%, DD -45%, low $4,336), consistent in both dev halves. On the locked test set it still lost: -6.7% (hit rate 37.9%, 66 trades, lowest balance $4,484) versus -25% for the base. IWM (small caps) fell 8.5% over those 3 months while SPY rose 1.7%, so small-cap breadth, not SPY, is the relevant regime.
+- **Headroom to the next resistance (13-month `atr_pivot`, tag `lb13`):** trades with at least 20% room from the 15:55 price to the next level above (blue sky counts) averaged +1.22% (PF 1.44, 495 trades) versus +0.01% (PF 1.00) for those with less, in both dev halves. Stacked with price above the 200 SMA (`H3`): 404 trades, 43.8% hit rate, PF 1.62, +185%, max DD -26%, lowest balance $4,912. On the locked test set `H3` took only 24 trades (54% hit rate, -1.7%, lowest balance $4,909) versus -28% for the base, and `H2` (adds IWM and SPY up) took 13 trades (-1.3%). Staying out of a weak small-cap tape protected the account, but there are too few test trades to confirm an edge.
+- **News as a filter did not help:** Benzinga headlines in the prior 24h gave no better mean or hit rate (company-specific event headlines existed for fewer than 120 trades), and no-news was slightly better. Coverage is the caveat, not proof that news is irrelevant.
+- **The edge decays:** rolling 50-trade hit rate was 60-70% in late 2024 and 35-45% afterwards.
 - **Premature optimization of rules:** nine exit rule sets on the same two years is enough to overfit; prefer the dev/test protocol above.
 
 ## Data Sources

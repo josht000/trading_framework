@@ -14,6 +14,7 @@ position by 15:59 is skipped; an exit that runs out of bars sells the remainder 
 """
 
 import hashlib
+from dataclasses import replace
 import os
 import pickle
 from concurrent.futures import ProcessPoolExecutor
@@ -28,25 +29,26 @@ CACHE_DIR = os.path.join("data", "pit", "ladder_cache")
 T_OPEN, T_CLOSE = pd.Timestamp("09:30").time(), pd.Timestamp("16:00").time()
 
 
-def cache_path():
-    key = hashlib.md5(repr(ATR_PIVOT_CONFIG).encode()).hexdigest()[:10]
+def cache_path(lookback_bars=None):
+    conf = replace(ATR_PIVOT_CONFIG, lookback_bars=lookback_bars) if lookback_bars else ATR_PIVOT_CONFIG
+    key = hashlib.md5(repr(conf).encode()).hexdigest()[:10]
     return os.path.join(CACHE_DIR, f"{key}.pkl")
 
 
-def load_cache():
+def load_cache(lookback_bars=None):
     try:
-        with open(cache_path(), "rb") as f:
+        with open(cache_path(lookback_bars), "rb") as f:
             return pickle.load(f)
     except (FileNotFoundError, EOFError, pickle.UnpicklingError):
         return {}
 
 
-def save_cache(cache):
+def save_cache(cache, lookback_bars=None):
     os.makedirs(CACHE_DIR, exist_ok=True)
-    tmp = cache_path() + ".tmp"
-    with open(tmp, "wb") as f:
+    path = cache_path(lookback_bars)
+    with open(path + ".tmp", "wb") as f:
         pickle.dump(cache, f)
-    os.replace(tmp, cache_path())
+    os.replace(path + ".tmp", path)
 
 
 def _fp(daily_df, n):
@@ -73,7 +75,7 @@ def process_symbol(task):
     new_entry = None
     if cfg["use_cache"] and len(levels) > n_before:
         new_entry = {"n": len(daily_df), "fp": _fp(daily_df, len(daily_df)), "levels": levels}
-    trades, forced = build_trades(s, sig, daily_df, cfg)
+    trades, forced = build_trades(s, sig, daily_df, cfg, (ctx or {}).get("news_df"))
     return s, trades, forced, new_entry, None
 
 
@@ -144,6 +146,58 @@ def _features(sig, ts, ep, daily_df, day, atr_prior):
     }
 
 
+POS_WORDS = ("contract", "award", "order", "selected", "agreement", "partnership", "collaborat", "approval",
+             "approves", "clearance", "fda", "breakthrough", "record", "upgrade", "raises guidance", "beats",
+             "surge", "soar", "acquire", "acquisition", "launch", "wins", "expands", "patent", "milestone")
+NEG_WORDS = ("offering", "private placement", "registered direct", "at-the-market", "atm ", "dilut", "shelf",
+             "warrant", "reverse split", "going concern", "bankrupt", "delist", "deficiency", "downgrade",
+             "lawsuit", "investigation", "misses", "cuts guidance", "resign", "halt", "default", "sec ")
+DILUTION_WORDS = ("offering", "private placement", "registered direct", "at-the-market", "atm ", "dilut",
+                  "shelf", "reverse split", "going concern", "warrants")
+
+
+def _news_features(news, ts):
+    """Headline/summary features known at `ts` (article timestamps are UTC). news: DataFrame or None."""
+    keys = ("news_24h", "news_5d", "news_pos_24h", "news_neg_24h", "news_score_24h", "dilution_10d")
+    out = {k: 0 for k in keys}
+    out["has_news_data"] = int(news is not None and len(news) > 0)
+    if news is None or len(news) == 0:
+        return out
+    t = ts.tz_convert("UTC")
+    w24 = news[(news["created_at"] > t - pd.Timedelta(hours=24)) & (news["created_at"] <= t)]
+    w5 = news[(news["created_at"] > t - pd.Timedelta(days=5)) & (news["created_at"] <= t)]
+    w10 = news[(news["created_at"] > t - pd.Timedelta(days=10)) & (news["created_at"] <= t)]
+    text = lambda df: (df["headline"].fillna("") + " " + df["summary"].fillna("")).str.lower()
+    out["news_24h"], out["news_5d"] = len(w24), len(w5)
+    if len(w24):
+        tx = text(w24)
+        out["news_pos_24h"] = int(sum(tx.str.contains(w, regex=False).any() for w in POS_WORDS))
+        out["news_neg_24h"] = int(sum(tx.str.contains(w, regex=False).any() for w in NEG_WORDS))
+        out["news_score_24h"] = out["news_pos_24h"] - out["news_neg_24h"]
+    if len(w10):
+        tx = text(w10)
+        out["dilution_10d"] = int(sum(tx.str.contains(w, regex=False).any() for w in DILUTION_WORDS))
+    return out
+
+
+def _ma_features(daily_df, day, ep):
+    """Moving-average position at 15:55: 200 SMA and 9/20 EMA (prior closes, rolled forward with the 15:55 price)."""
+    c = daily_df.loc[daily_df.index < pd.Timestamp(day), "close"].astype(float)
+    out = {}
+    sma200 = float(c.tail(200).mean()) if len(c) >= 200 else float("nan")
+    out["sma200"] = sma200
+    out["dist_sma200"] = ep / sma200 - 1 if np.isfinite(sma200) else float("nan")
+    out["above_sma200"] = float(ep > sma200) if np.isfinite(sma200) else float("nan")
+    for n in (9, 20):
+        if len(c) >= n:
+            e = float(c.ewm(span=n, adjust=False).mean().iloc[-1])
+            e = (2 / (n + 1)) * ep + (1 - 2 / (n + 1)) * e
+            out[f"dist_ema{n}"] = ep / e - 1
+        else:
+            out[f"dist_ema{n}"] = float("nan")
+    return out
+
+
 def _path(sig, tm, ts, ep, day, later):
     """Where the overnight move happened: after-hours (to 16:45), pre-market, and the open."""
     out = {"ah45_min": np.nan, "ah45_last": np.nan, "pm_last": np.nan, "open_ret": np.nan}
@@ -159,7 +213,7 @@ def _path(sig, tm, ts, ep, day, later):
     return out
 
 
-def build_trades(s, sig, daily_df, cfg):
+def build_trades(s, sig, daily_df, cfg, news=None):
     """Trades for every exit variant in cfg['variants'] (name -> spec) on the same entry signals."""
     commission, rz = cfg["commission"], cfg["realism"]
     delisted = bool(pd.notna(daily_df["delisted_utc"].iloc[-1]))
@@ -190,7 +244,8 @@ def build_trades(s, sig, daily_df, cfg):
             continue
         shares = got
         feats = {**_features(sig, ts, ep0, daily_df, day, prior_atr), **_path(sig, tm, ts, ep0, day, later),
-                 "fill_entry": fill_frac}
+                 **_ma_features(daily_df, day, ep0), **_news_features(news, ts), "fill_entry": fill_frac,
+                 "headroom": float(sig.at[ts, "headroom"]) if "headroom" in sig.columns else float("nan")}
 
         for name, v in cfg["variants"].items():
             hit = None

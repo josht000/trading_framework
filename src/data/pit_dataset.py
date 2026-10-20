@@ -156,6 +156,162 @@ def fetch_marketparquet(api_key=None, log=print):
     log(f"marketparquet: {len(files)} files")
 
 
+DAILY_START = date(2023, 9, 1)  # ~200 trading days of warm-up before the 2024-10 start, for the 200 SMA
+MARKET_SYMBOLS = ("SPY", "QQQ", "IWM")
+
+
+def fetch_market(start=DAILY_START, end=None, log=print):
+    """SPY / QQQ / IWM daily bars (from `start`) and 1-minute bars (from 2024-10-01), including extended hours."""
+    from alpaca.data.timeframe import TimeFrame
+    end = end or date.today()
+    client = _alpaca()
+    out = PIT_DIR / "market"
+    out.mkdir(parents=True, exist_ok=True)
+    for sym in MARKET_SYMBOLS:
+        d = _alpaca_bars(client, [sym], TimeFrame.Day, pd.Timestamp(start, tz=NY),
+                         min(pd.Timestamp(end, tz=NY), pd.Timestamp.now(tz=NY) - pd.Timedelta(days=1)))
+        d["date"] = d["timestamp"].dt.tz_localize(None).dt.normalize()
+        d[["date", "open", "high", "low", "close", "volume"]].to_parquet(out / f"{sym}_daily.parquet", index=False)
+        frames, cur = [], pd.Timestamp("2024-10-01", tz=NY)
+        limit = pd.Timestamp.now(tz=NY) - pd.Timedelta(minutes=20)  # free plan blocks the latest 15 min of SIP
+        while cur < min(pd.Timestamp(end, tz=NY) + pd.Timedelta(days=1), limit):
+            nxt = min(cur + pd.DateOffset(months=2), limit)
+            m = _alpaca_bars(client, [sym], TimeFrame.Minute, cur, nxt)
+            if len(m):
+                frames.append(m[["timestamp", "open", "high", "low", "close", "volume"]])
+            cur = nxt
+        pd.concat(frames, ignore_index=True).to_parquet(out / f"{sym}_minute.parquet", index=False)
+        log(f"{sym}: {len(d)} daily bars, {sum(len(f) for f in frames)} minute bars")
+
+
+def fetch_news(symbols, start=DAILY_START, end=None, workers=4, log=print):
+    """Alpaca (Benzinga) news per symbol over the whole window -> news/news.parquet (one row per symbol x article)."""
+    from src.data.news_client import AlpacaNewsClient
+    end = end or date.today() + timedelta(days=1)
+    client = AlpacaNewsClient()
+    syms = sorted(set(symbols))
+
+    def one(sym):
+        try:
+            df = client.fetch_news([sym], start=str(start), end=str(end))
+        except Exception:
+            return sym, None
+        if df is None or df.empty:
+            return sym, pd.DataFrame()
+        df = df[[sym in list(s) for s in df["symbols"]]]
+        keep = [c for c in ("created_at", "headline", "summary", "source") if c in df.columns]
+        df = df[keep].copy()
+        df.insert(0, "symbol", sym)
+        return sym, df
+
+    frames, failed = [], []
+    with ThreadPoolExecutor(workers) as ex:
+        for i, (sym, df) in enumerate(ex.map(one, syms), 1):
+            (frames.append(df) if df is not None else failed.append(sym))
+            if i % 200 == 0:
+                log(f"  news {i}/{len(syms)} symbols")
+    news = pd.concat([f for f in frames if len(f)], ignore_index=True)
+    news["created_at"] = pd.to_datetime(news["created_at"], utc=True)
+    out = PIT_DIR / "news"
+    out.mkdir(parents=True, exist_ok=True)
+    news.to_parquet(out / "news.parquet", index=False)
+    log(f"news: {len(news)} rows, {news['symbol'].nunique()} of {len(syms)} symbols have articles, {len(failed)} failed")
+
+
+def fetch_otc_reference(client=None, log=print):
+    """Massive reference for OTC / pink-sheet tickers (market=otc, active and inactive) -> otc_reference.parquet."""
+    client = client or MassiveClient()
+    frames = []
+    for active in ("true", "false"):
+        url, params, pages = "/v3/reference/tickers", dict(market="otc", active=active, limit=1000), 0
+        while url:
+            r = client.get(url, **params)
+            if not r.ok:
+                raise RuntimeError(f"otc reference {active}: {r.status_code} {r.text[:200]}")
+            j = r.json()
+            frames.append(pd.DataFrame(j.get("results", [])).assign(_active_query=active))
+            pages += 1
+            url, params = j.get("next_url"), {}
+    otc = pd.concat(frames, ignore_index=True)
+    keep = [c for c in ["ticker", "name", "type", "market", "active", "cik", "delisted_utc"] if c in otc.columns]
+    otc = otc[keep].drop_duplicates(subset=["ticker", "name"])
+    _atomic_write(otc, PIT_DIR / "otc_reference.parquet")
+    log(f"otc reference: {len(otc)} rows")
+
+
+EDGAR_FORMS = ("8-K", "8-K/A", "S-1", "S-1/A", "S-3", "S-3/A", "F-1", "F-3", "424B1", "424B2", "424B3", "424B4", "424B5", "424B7",
+               "NT 10-K", "NT 10-Q", "10-K", "10-Q", "SC 13D", "SC 13G", "SCHEDULE 13D", "SCHEDULE 13G")
+
+
+def fetch_edgar(symbols, start=DAILY_START, workers=6, log=print):
+    """
+    SEC EDGAR filings (8-K with item codes, offering and late-filing forms, 10-K/10-Q dates) per symbol using the CIK in the
+    Massive reference -> edgar/filings.parquet. SEC asks for a descriptive User-Agent: set EDGAR_USER_AGENT="Name email".
+    Rate limited to about 8 requests per second.
+    """
+    import threading
+
+    ua = os.getenv("EDGAR_USER_AGENT", "TradingFramework research (set EDGAR_USER_AGENT)")
+    ref = pd.read_parquet(PIT_DIR / "reference.parquet").sort_values("active", ascending=False).drop_duplicates("ticker").set_index("ticker")
+    ciks = {s: str(ref.at[s, "cik"]).zfill(10) for s in sorted(set(symbols)) if s in ref.index and pd.notna(ref.at[s, "cik"])}
+    lock, state = threading.Lock(), {"t": 0.0}
+
+    def get(url):
+        for attempt in range(5):
+            with lock:
+                wait = 0.125 - (time.time() - state["t"])
+                if wait > 0:
+                    time.sleep(wait)
+                state["t"] = time.time()
+            r = requests.get(url, headers={"User-Agent": ua, "Accept-Encoding": "gzip, deflate"}, timeout=60)
+            if r.status_code in (429, 503):
+                time.sleep(5 * (attempt + 1))
+                continue
+            return r
+        return r
+
+    def rows_from(block, sym, cik):
+        df = pd.DataFrame(block)
+        if df.empty:
+            return df
+        df = df[df["form"].isin(EDGAR_FORMS)].copy()
+        if df.empty:
+            return df
+        df["acceptance_utc"] = pd.to_datetime(df["acceptanceDateTime"], utc=True, errors="coerce")
+        df = df[df["acceptance_utc"] >= pd.Timestamp(start, tz="UTC")]
+        df["symbol"], df["cik"] = sym, cik
+        df["items"] = df.get("items", "")
+        return df[["symbol", "cik", "form", "items", "acceptance_utc", "accessionNumber", "primaryDocument"]]
+
+    def one(item):
+        sym, cik = item
+        try:
+            r = get(f"https://data.sec.gov/submissions/CIK{cik}.json")
+            if not r.ok:
+                return sym, None
+            j = r.json()
+            out = [rows_from(j["filings"]["recent"], sym, cik)]
+            for f in j["filings"].get("files", []):
+                if pd.Timestamp(f.get("filingTo", "2000-01-01")) < pd.Timestamp(start):
+                    continue
+                rr = get(f"https://data.sec.gov/submissions/{f['name']}")
+                if rr.ok:
+                    out.append(rows_from(rr.json(), sym, cik))
+            return sym, pd.concat(out, ignore_index=True)
+        except Exception:
+            return sym, None
+
+    frames, failed = [], []
+    with ThreadPoolExecutor(workers) as ex:
+        for i, (sym, df) in enumerate(ex.map(one, ciks.items()), 1):
+            (frames.append(df) if df is not None else failed.append(sym))
+    filings = pd.concat([f for f in frames if len(f)], ignore_index=True)
+    out = PIT_DIR / "edgar"
+    out.mkdir(parents=True, exist_ok=True)
+    filings.to_parquet(out / "filings.parquet", index=False)
+    log(f"edgar: {len(filings)} filings for {filings['symbol'].nunique()} of {len(ciks)} symbols with a CIK ({len(failed)} failed)")
+
+
 SKIP_TYPES = {"WARRANT", "RIGHT", "UNIT", "SP", "ETF", "FUND", "PFD", "ETS", "ETN", "INDEX"}
 NY = "America/New_York"
 
@@ -222,7 +378,7 @@ def fetch_alpaca_daily(start, end, batch=100, log=print):
 
 
 def daily_candidates(daily, min_price=2.0, max_price=20.0, min_avg_volume=500_000, min_rel_volume=2.0,
-                     lookback=20, use_atr_pivot=True):
+                     lookback=20, use_atr_pivot=True, lookback_bars=None):
     """
     Daily-only prefilter for the overnight strategy. Loose on purpose: full-day volume stands in for
     15:55 volume, and a breakout is either a new rolling-20 high or a close through an atr_pivot
@@ -244,7 +400,8 @@ def daily_candidates(daily, min_price=2.0, max_price=20.0, min_avg_volume=500_00
     if use_atr_pivot:
         from src.screening.historical import ATR_PIVOT_CONFIG
         from src.screening.resistance import ResistanceDetector
-        det = ResistanceDetector(ATR_PIVOT_CONFIG)
+        from dataclasses import replace
+        det = ResistanceDetector(replace(ATR_PIVOT_CONFIG, lookback_bars=lookback_bars) if lookback_bars else ATR_PIVOT_CONFIG)
         for sym, rows in d[base & ~ok].groupby("symbol"):
             p = det.prepare(d.loc[d["symbol"] == sym, ["date", "open", "high", "low", "close", "volume"]]
                             .set_index("date"))
@@ -322,7 +479,7 @@ def load_source(name):
 def build_daily(log=print):
     """Merge Massive (primary) with MarketParquet (fills gaps) into daily_pit.parquet."""
     parts, seen = [], set()
-    universe = set(universe_symbols(pd.Timestamp("2024-09-01")))
+    universe = set(universe_symbols(pd.Timestamp(DAILY_START)))
     for name, label in (("alpaca_daily", "alpaca"), ("massive_daily", "massive"), ("mp_daily", "marketparquet")):
         src = load_source(name)
         if not len(src):

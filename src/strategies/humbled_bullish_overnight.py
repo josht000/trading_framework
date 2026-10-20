@@ -48,6 +48,7 @@ class HumbledBullishOvernight:
         resistance_method: str = "rolling",
         min_breakout_atr: float = 0.0,
         lazy_resistance: bool = False,
+        lookback_bars: Optional[int] = None,
     ):
         """
         Initialize strategy parameters
@@ -85,6 +86,7 @@ class HumbledBullishOvernight:
             resistance_method=resistance_method,
             min_breakout_atr=min_breakout_atr,
             lazy_resistance=lazy_resistance,
+            lookback_bars=lookback_bars,
         )
 
     def calculate_vwap(self, df: pd.DataFrame) -> pd.Series:
@@ -309,6 +311,7 @@ class HumbledBullishOvernight:
         intraday_with_signals["relative_volume"] = screen[
             "relative_volume_value"
         ].reindex(intraday_with_signals.index)
+        intraday_with_signals["headroom"] = screen["headroom"].reindex(intraday_with_signals.index)
         intraday_with_signals["session_vwap"] = screen["session_vwap"].reindex(
             intraday_with_signals.index
         )

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import time
 
 import numpy as np
@@ -35,13 +36,14 @@ class HistoricalPriceVolumeScreener:
         resistance_config=None,
         min_breakout_atr=0.0,
         lazy_resistance=False,
+        lookback_bars=None,
     ):
         self.lazy_resistance = lazy_resistance
         self.ladder_cache = None
         self.resistance_method = resistance_method
         self.min_breakout_atr = min_breakout_atr
         self.detector = (
-            ResistanceDetector(resistance_config or ATR_PIVOT_CONFIG)
+            ResistanceDetector(resistance_config or (replace(ATR_PIVOT_CONFIG, lookback_bars=lookback_bars) if lookback_bars else ATR_PIVOT_CONFIG))
             if resistance_method == "atr_pivot"
             else None
         )
@@ -95,6 +97,7 @@ class HistoricalPriceVolumeScreener:
         result["relative_volume_value"] = np.nan
         result["session_vwap"] = np.nan
         result["social_surge"] = False
+        result["headroom"] = np.nan
         result["eligible"] = False
 
         daily_dates = pd.Index(daily.index.date)
@@ -124,6 +127,7 @@ class HistoricalPriceVolumeScreener:
             relative_volume = (
                 cumulative_volume / average_volume if average_volume > 0 else np.nan
             )
+            headroom = np.nan
             if prepared is not None:
                 cheap_pass = (
                     self.min_price <= candidate["close"] <= self.max_price
@@ -141,6 +145,8 @@ class HistoricalPriceVolumeScreener:
                         & (uppers + self.min_breakout_atr * atr < candidate["close"])
                     ]
                     resistance = float(crossed.max()) if len(crossed) else float("inf")
+                    above = uppers[uppers > candidate["close"]]
+                    headroom = float(above.min() / candidate["close"] - 1) if len(above) else 9.99
             date_key = pd.Timestamp(session_date)
             caps = context["market_cap"]
             if caps.empty:
@@ -189,6 +195,8 @@ class HistoricalPriceVolumeScreener:
                 result.at[candidate_index, name] = bool(value)
             result.at[candidate_index, "relative_volume_value"] = relative_volume
             result.at[candidate_index, "session_vwap"] = session_vwap
+            if prepared is not None:
+                result.at[candidate_index, "headroom"] = headroom
             result.at[candidate_index, "social_surge"] = bool(social_surge)
             result.at[candidate_index, "eligible"] = all(values.values())
         return result

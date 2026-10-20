@@ -1,0 +1,339 @@
+"""
+Trade-ranking experiments (dev set; the locked test set is read only with --final).
+
+  python rank_test.py                # build the table, run the dev experiments, tune weights, write reports/ranking_report.md
+  python rank_test.py --rebuild      # rebuild the feature table first
+  python rank_test.py --final        # one look at the locked test period for the strategies chosen on dev
+
+Account: $5,000, <= 5 overnight positions/day, 20% of equity each (25% for boosted trades). Candidates are ranked by `score`
+(src/backtest/ranking.py); the day's top 5 are taken, optionally only if score >= a threshold. Hygiene filters drop OTC / pink-sheet
+tickers and names with EDGAR distress or dilution filings (3.01 delisting notice, 1.03, 4.02, late-filing forms, offerings, 3.02).
+"""
+
+import argparse
+import json
+import os
+import sys
+
+import numpy as np
+import pandas as pd
+
+sys.path.insert(0, os.path.dirname(__file__))
+from analyze_winners import prepare
+from explore import FILTERS
+from src.backtest import features_extra as fx
+from src.backtest import ranking as rk
+from src.backtest.pit_metrics import select_trades, simulate_account
+
+OUT = os.path.join("reports", "ranking")
+TABLE = os.path.join("reports", "ranked_table.parquet")
+RNG = np.random.default_rng(11)
+
+STRATS = {  # existing top strategies: entry filters on the base pm_target25_v2 trades
+    "base": ["all"],
+    "S1": ["above_sma200", "iwm_day>=0", "spy_day>=0"],
+    "H3": ["headroom>=20%", "above_sma200"],
+    "H2": ["headroom>=20%", "above_sma200", "iwm_day>=0", "spy_day>=0"],
+    "base<=100M": ["shares<=100M"],
+    "S1<=100M": ["above_sma200", "iwm_day>=0", "spy_day>=0", "shares<=100M"],
+    "H3<=100M": ["headroom>=20%", "above_sma200", "shares<=100M"],
+}
+
+
+def build_table(rebuild=False):
+    if os.path.exists(TABLE) and not rebuild:
+        return pd.read_parquet(TABLE)
+    T = prepare()
+    cand = pd.read_parquet(os.path.join("data", "pit", "candidates.parquet"))
+    T = fx.add_edgar(T)
+    T = fx.add_news_since_close(T)
+    T = fx.add_movers(T)
+    T = fx.add_theme_heat(T, cand)
+    T = fx.add_otc(T)
+    T.to_parquet(TABLE, index=False)
+    return T
+
+
+def hygiene(T, level):
+    """level 0 none, 1 no OTC, 2 + no EDGAR distress, 3 + no recent offering/dilution."""
+    m = pd.Series(True, index=T.index)
+    if level >= 1:
+        m &= ~T["is_otc"]
+    if level >= 2:
+        m &= (T["e_distress_30d"].fillna(0) == 0) & (T["e_delist_notice_90d"].fillna(0) == 0)
+    if level >= 3:
+        m &= (T["e_offering_10d"].fillna(0) == 0) & (T["e_item_302_10d"].fillna(0) == 0)
+    return m
+
+
+def apply_keys(T, keys):
+    m = np.ones(len(T), bool)
+    for k in keys:
+        m &= FILTERS[k](T).fillna(False).to_numpy()
+    return T[m]
+
+
+def run(t, days, top_n=5, rank="rank_key", boost=None):
+    if len(t) == 0:
+        return None
+    st, eq, dr = simulate_account(t, max_pos=top_n, rank=rank, boost=boost, all_days=days)
+    return st
+
+
+COLS = ["trades", "win%", "mean%", "PF", "total%", "maxDD%", "min$", "worst_day%", "loss_streak_days", "sharpe"]
+
+
+def table(rows):
+    df = pd.DataFrame(rows).set_index("setup")
+    return df[[c for c in COLS if c in df.columns]]
+
+
+def with_score(T, weights=None, scale="raw"):
+    s = rk.score(T, weights, scale)
+    return T.assign(score=s, rank_key=s + 1e-6 * T["rel_vol"].clip(upper=100).fillna(0) / 100.0)
+
+
+def day_split(days, frac=0.6):
+    return days[: int(len(days) * frac)], days[int(len(days) * frac):]
+
+
+def md_table(df):
+    from winners_analysis import md_table as mt
+    return mt(df, floatfmt="{:.2f}")
+
+
+def dev_experiments(T, md):
+    dev = T[T["period"] == "dev"]
+    days = pd.bdate_range(dev["day"].min(), dev["day"].max())
+    res = {}
+
+    # E0: hygiene filters on the base strategy (selection by relative volume as before)
+    rows = []
+    for lvl, lab in ((0, "no hygiene"), (1, "+ no OTC / pink sheets"), (2, "+ no EDGAR distress (3.01/1.03/4.02/NT)"), (3, "+ no recent offering / 3.02")):
+        s = dev[hygiene(dev, lvl)]
+        st = run(with_score(s), days, rank="rel_vol")
+        rows.append({"setup": lab, **st})
+    md.append("### Hygiene filters on the base strategy (rank by relative volume, as before)\n\n" + md_table(table(rows)) + "\n")
+    res["hygiene"] = rows
+
+    # E1: ranking vs relative volume, thresholds, top-N; hygiene level 3
+    base = with_score(dev[hygiene(dev, 1)])
+    rows = [{"setup": "rank by rel. volume, top 5", **run(base, days, rank="rel_vol")}]
+    rows.append({"setup": "rank by score (default weights), top 5", **run(base, days)})
+    for th in (0, 1, 2, 3):
+        s = base[base["score"] >= th]
+        st = run(s, days)
+        if st:
+            rows.append({"setup": f"score >= {th}, top 5", **st})
+    for n in (3, 2):
+        rows.append({"setup": f"score >= 1, top {n}", **run(base[base["score"] >= 1], days, top_n=n)})
+    md.append("### Ranking with the default weights (base strategy, OTC excluded)\n\n" + md_table(table(rows)) + "\n")
+    res["rank_default"] = rows
+
+    # E2: the existing top strategies with ranking
+    rows = []
+    for name, keys in STRATS.items():
+        s0 = apply_keys(base, keys)
+        for lab, rank, th in (("rel_vol", "rel_vol", None), ("score", "rank_key", None), ("score>=1", "rank_key", 1), ("score>=2", "rank_key", 2)):
+            s = s0 if th is None else s0[s0["score"] >= th]
+            st = run(s, days, rank=rank)
+            if st:
+                rows.append({"setup": f"{name} / {lab}", **st})
+    md.append("### Existing top strategies with ranking (OTC excluded; EDGAR distress/dilution flags are score components)\n\n" + md_table(table(rows)) + "\n")
+    res["strats"] = rows
+
+    # E3: component ablation with threshold 1
+    rows = []
+    w0 = dict(rk.DEFAULT_WEIGHTS)
+    full = with_score(dev[hygiene(dev, 1)], w0)
+    rows.append({"setup": "all components", **run(full[full["score"] >= 1], days)})
+    for k in rk.COMPONENTS:
+        w = dict(w0)
+        w[k] = 0.0
+        s = with_score(dev[hygiene(dev, 1)], w)
+        st = run(s[s["score"] >= 1], days)
+        rows.append({"setup": f"without {k}", **st})
+    md.append("### Component ablation (score >= 1, top 5): what does each component contribute?\n\n" + md_table(table(rows)) + "\n")
+    res["ablation"] = rows
+
+    # E4: scales
+    rows = []
+    for scale in ("raw", "integer", "normalized"):
+        s = with_score(dev[hygiene(dev, 1)], None, scale)
+        th = {"raw": 1.0, "integer": 1.0, "normalized": 0.5 + 1.0 / (2 * sum(rk.DEFAULT_WEIGHTS.values()))}[scale]
+        st = run(s[s["score"] >= th], days)
+        rows.append({"setup": f"{scale} (threshold {th:.2f})", **st})
+    md.append("### Score scalings (same weights): raw float, integer -5..5, normalized 0..1\n\n" + md_table(table(rows)) + "\n")
+
+    # E5: boost sizing
+    rows = []
+    s = base[base["score"] >= 1]
+    for lab, b in (("no boost", None), ("25% when score >= 3", lambda x: x["score"] >= 3), ("25% when score >= 4", lambda x: x["score"] >= 4)):
+        st = run(s, days, boost=b)
+        rows.append({"setup": lab, **st})
+    md.append("### Position sizing by score (score >= 1, top 5): 20% base, 25% boost\n\n" + md_table(table(rows)) + "\n")
+    return res
+
+
+def tune_weights(T, md, n_iter=700):
+    dev = T[(T["period"] == "dev")]
+    dev = dev[hygiene(dev, 1)]
+    days = pd.bdate_range(dev["day"].min(), dev["day"].max())
+    d_tr, d_va = day_split(days)
+    tr, va = dev[dev["day"].isin(d_tr)], dev[dev["day"].isin(d_va)]
+    grid = {k: [0.0, 0.5, 1.0, 1.5, 2.0] for k in rk.COMPONENTS}
+    grid["delist_notice"] = [1.0, 2.0, 3.0]
+    grid["late_filing"] = [1.0, 1.5, 2.0]
+    ths = [0.0, 1.0, 2.0, 3.0]
+    comp_tr, comp_va = rk.components(tr), rk.components(va)
+    rows = []
+    for i in range(n_iter):
+        w = {k: float(RNG.choice(v)) for k, v in grid.items()}
+        th = float(RNG.choice(ths))
+        s_tr = sum(w[k] * comp_tr[k] for k in rk.COMPONENTS)
+        sel = tr[s_tr >= th].assign(rank_key=s_tr[s_tr >= th])
+        if len(sel) < 150:
+            continue
+        a = run(sel, d_tr, rank="rank_key")
+        s_va = sum(w[k] * comp_va[k] for k in rk.COMPONENTS)
+        selv = va[s_va >= th].assign(rank_key=s_va[s_va >= th])
+        b = run(selv, d_va, rank="rank_key") if len(selv) >= 40 else None
+        rows.append({"weights": json.dumps(w), "threshold": th, "train_trades": a["trades"], "train_sharpe": a["sharpe"], "train_total%": a["total%"],
+                     "train_maxDD%": a["maxDD%"], "val_trades": b["trades"] if b else 0, "val_sharpe": b["sharpe"] if b else np.nan,
+                     "val_total%": b["total%"] if b else np.nan, "val_maxDD%": b["maxDD%"] if b else np.nan, "val_min$": b["min$"] if b else np.nan})
+    df = pd.DataFrame(rows)
+    df.to_csv(os.path.join(OUT, "weight_search.csv"), index=False)
+    top = df.sort_values("train_sharpe", ascending=False).head(15)
+    corr = df[["train_sharpe", "val_sharpe"]].dropna().corr(method="spearman").iloc[0, 1]
+    md.append(f"### Weight tuning (random search, {len(df)} valid draws of weights x threshold; train = first 60% of dev days, validation = last 40%)\n\n"
+              f"Rank correlation between train and validation Sharpe across all draws: {corr:+.2f} "
+              "(positive = tuning transfers, near zero = tuning is mostly noise). Top 15 draws by train Sharpe:\n\n" +
+              md_table(top.drop(columns="weights").assign(weights=top["weights"].apply(lambda s: " ".join(f"{k[:4]}={v:g}" for k, v in json.loads(s).items()))).set_index("weights")) + "\n")
+    cand = top.sort_values("val_sharpe", ascending=False).iloc[0]
+    best_w, best_th = json.loads(cand["weights"]), float(cand["threshold"])
+    json.dump({"weights": best_w, "threshold": best_th, "note": "picked: best validation Sharpe among top-15 train draws"},
+              open(os.path.join("results", "ranking_weights.json"), "w"), indent=1)
+    md.append(f"Selected (best validation Sharpe among the top 15 by train): weights {best_w}, threshold {best_th:g}; "
+              f"validation Sharpe {cand['val_sharpe']:.2f}, total {cand['val_total%']:.0f}%, max DD {cand['val_maxDD%']:.0f}%, {int(cand['val_trades'])} trades.\n")
+    return best_w, best_th, corr
+
+
+def walk_forward_ridge(dev, alpha=50.0, clip=0.30, min_months=6, embargo_bdays=5):
+    """Learn component weights month by month (ridge on winsorized returns, training rows end before the test month): no look-ahead."""
+    from sklearn.linear_model import Ridge
+    comp = rk.components(dev)
+    y = dev["ret"].clip(-clip, clip)
+    pred = pd.Series(np.nan, index=dev.index)
+    for m in sorted(dev["month"].unique())[min_months:]:
+        tr = dev["day"] < (m - pd.offsets.BDay(embargo_bdays))
+        te = dev["month"] == m
+        if tr.sum() < 200 or te.sum() == 0:
+            continue
+        pred[te] = Ridge(alpha=alpha).fit(comp[tr], y[tr]).predict(comp[te])
+    final = Ridge(alpha=alpha).fit(comp, y)
+    return pred, final
+
+
+def ridge_experiment(T, md):
+    dev = T[(T["period"] == "dev")]
+    dev = dev[hygiene(dev, 1)].copy()
+    pred, final = walk_forward_ridge(dev)
+    ok = pred.notna()
+    oos = dev[ok].copy()
+    days = pd.bdate_range(oos["day"].min(), oos["day"].max())
+    oos["wf"] = pred[ok]
+    oos["default"] = rk.score(oos)
+    oos["rank_wf"] = oos["wf"]
+    oos["rank_def"] = oos["default"] + 1e-6 * oos["rel_vol"].clip(upper=100).fillna(0) / 100
+    rows = [{"setup": "rel. volume rank, top 5 (same months)", **run(oos, days, rank="rel_vol")},
+            {"setup": "default score >= 2", **run(oos[oos["default"] >= 2], days, rank="rank_def")},
+            {"setup": "default score >= 3", **run(oos[oos["default"] >= 3], days, rank="rank_def")}]
+    for th in (0.0, 0.005, 0.01, 0.02):
+        st = run(oos[oos["wf"] >= th], days, rank="rank_wf")
+        if st:
+            rows.append({"setup": f"walk-forward ridge, predicted return >= {100 * th:.1f}%", **st})
+    coef = pd.Series(final.coef_, index=rk.COMPONENTS)
+    nl = chr(10)
+    md.append("### Learned weights: monthly walk-forward ridge on the score components (out-of-sample months only)" + nl + nl +
+              md_table(table(rows)) + nl + nl +
+              "Ridge coefficients on all dev trades (expected trade return per unit of each component, winsorized at 30%): " +
+              ", ".join(f"{k} {100 * v:+.2f}%" for k, v in coef.items()) + nl)
+    return final, rows
+
+
+def final_dev_table(T, best_w, best_th, md):
+    dev = T[T["period"] == "dev"]
+    days = pd.bdate_range(dev["day"].min(), dev["day"].max())
+    rows = []
+    cases = {}
+    d3 = lambda x: x[hygiene(x, 1)]
+    for name, keys in STRATS.items():
+        cases[f"{name} (as before: rel. volume rank, no hygiene)"] = (lambda x, k=keys: apply_keys(x, k), "rel_vol", None, None)
+    cases["base + hygiene, default-weight score >= 1"] = (lambda x: apply_keys(d3(x), ["all"]), "rank_key", None, 1.0)
+    cases["H3 + hygiene, default-weight score >= 1"] = (lambda x: apply_keys(d3(x), STRATS["H3"]), "rank_key", None, 1.0)
+    cases["base + hygiene, tuned score"] = (lambda x: apply_keys(d3(x), ["all"]), "rank_key", best_w, best_th)
+    cases["H3 + hygiene, tuned score"] = (lambda x: apply_keys(d3(x), STRATS["H3"]), "rank_key", best_w, best_th)
+    cases["S1 + hygiene, tuned score"] = (lambda x: apply_keys(d3(x), STRATS["S1"]), "rank_key", best_w, best_th)
+    for lab, (f, rank, w, th) in cases.items():
+        s = with_score(dev, w)
+        s = f(s)
+        if th is not None:
+            s = s[s["score"] >= th]
+        st = run(s, days, rank=rank)
+        rows.append({"setup": lab, **st})
+    md.append("### Dev summary: previous top strategies vs ranked versions\n\n" + md_table(table(rows)) + "\n")
+    return rows, cases
+
+
+def final_test(T, best_w, best_th, md):
+    test = T[T["period"] == "test"]
+    days = pd.bdate_range(test["day"].min(), test["day"].max())
+    rows = []
+    d3 = lambda x: x[hygiene(x, 1)]
+    cases = {
+        "base (rel. volume rank, no hygiene)": (lambda x: x, "rel_vol", None, None),
+        "H3 (rel. volume rank, no hygiene)": (lambda x: apply_keys(x, STRATS["H3"]), "rel_vol", None, None),
+        "base + hygiene, default score >= 1": (lambda x: d3(x), "rank_key", None, 1.0),
+        "H3 + hygiene, default score >= 1": (lambda x: apply_keys(d3(x), STRATS["H3"]), "rank_key", None, 1.0),
+        "base + hygiene, tuned score": (lambda x: d3(x), "rank_key", best_w, best_th),
+        "H3 + hygiene, tuned score": (lambda x: apply_keys(d3(x), STRATS["H3"]), "rank_key", best_w, best_th),
+    }
+    for lab, (f, rank, w, th) in cases.items():
+        s = f(with_score(test, w))
+        if th is not None:
+            s = s[s["score"] >= th]
+        st = run(s, days, rank=rank)
+        rows.append({"setup": lab, **(st or {"trades": 0})})
+    md.append("## Locked test period (one look)\n\n" + md_table(table(rows)) + "\n")
+    return rows
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rebuild", action="store_true")
+    ap.add_argument("--final", action="store_true")
+    ap.add_argument("--iters", type=int, default=700)
+    a = ap.parse_args()
+    os.makedirs(OUT, exist_ok=True)
+    T = build_table(a.rebuild)
+    md = ["# Trade ranking experiments (dev set)\n"]
+    wpath = os.path.join("results", "ranking_weights.json")
+    if a.final:
+        cfg = json.load(open(wpath))
+        final_test(T, cfg["weights"], cfg["threshold"], md)
+        print("\n".join(md))
+        return
+    md.append(f"{len(T[T['period'] == 'dev'])} dev trades (pm_target25_v2 exits, 13-month atr_pivot); score components: {', '.join(rk.COMPONENTS)}; "
+              f"default weights {rk.DEFAULT_WEIGHTS}. OTC tickers flagged: {int(T['is_otc'].sum())} trades; trades with EDGAR data: {100 * T['e_has_data'].mean():.0f}%.\n")
+    dev_experiments(T, md)
+    best_w, best_th, corr = tune_weights(T, md, a.iters)
+    ridge_experiment(T, md)
+    final_dev_table(T, best_w, best_th, md)
+    path = os.path.join("reports", "ranking_report.md")
+    open(path, "w", encoding="utf-8").write("\n".join(md))
+    print("\n".join(md))
+    print("wrote", path)
+
+
+if __name__ == "__main__":
+    main()

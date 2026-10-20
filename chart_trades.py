@@ -9,6 +9,7 @@ Entry/exit markers use the prices recorded in the trade log.
 """
 
 import argparse
+from dataclasses import replace
 import glob
 import os
 import sys
@@ -25,7 +26,29 @@ from src.screening.historical import ATR_PIVOT_CONFIG
 from src.screening.resistance import ResistanceDetector
 
 UP, DOWN, EXT = "#26a69a", "#ef5350", "#b0b0b0"
+VWAP_COLOR = "#7b2cbf"
+MA_STYLE = {"EMA9": ("#808080", 1.4), "EMA20": ("#1f6fe5", 1.4), "SMA200": ("#d4a017", 1.8)}
 NY = "America/New_York"
+GENERIC = ("stocks moving", "stocks are moving", "movers", "stocks hitting", "stocks that hit", "shares are trading",
+           "trading higher", "trading lower", "session", "mid-day", "pre-market", "premarket", "after-market",
+           "moving in", "earnings scheduled", "analyzing", "short interest", "analyst ratings", "options activity",
+           "unusual options", "nasdaq", "dow ", "s&p 500", "futures", "52-week")
+_NEWS = {}
+
+
+def headlines(sym, entry_ts, hours=48, n=3):
+    """Most recent company-specific headlines in the `hours` before entry (Alpaca/Benzinga)."""
+    if "df" not in _NEWS:
+        path = os.path.join("data", "pit", "news", "news.parquet")
+        _NEWS["df"] = pd.read_parquet(path) if os.path.exists(path) else pd.DataFrame(columns=["symbol", "created_at", "headline"])
+    df = _NEWS["df"]
+    t = pd.Timestamp(entry_ts)
+    t = t.tz_localize(NY) if t.tzinfo is None else t
+    t = t.tz_convert("UTC")
+    w = df[(df["symbol"] == sym) & (df["created_at"] > t - pd.Timedelta(hours=hours)) & (df["created_at"] <= t)]
+    generic = w["headline"].fillna("").str.lower().apply(lambda x: any(g in x for g in GENERIC)).astype(bool)
+    w = w[~generic]
+    return [(r["created_at"].tz_convert(NY).strftime("%m-%d %H:%M"), r["headline"]) for _, r in w.sort_values("created_at").tail(n).iterrows()]
 
 
 def candles(ax, x, o, h, l, c, colors, width=0.7):
@@ -53,13 +76,13 @@ def five_min(symbol, signal_date):
     return five
 
 
-def chart_trade(row, daily, det, path, label):
+def chart_trade(row, daily, det, path, label, bars=273):
     sym = row["symbol"]
     entry_ts = pd.Timestamp(row["entry_time"])
     sig = pd.Timestamp(entry_ts.tz_localize(None).date() if entry_ts.tzinfo is None else entry_ts.tz_convert(NY).date())
     d = daily[daily["symbol"] == sym].sort_values("date").set_index("date")
     pos = d.index.searchsorted(sig)
-    lo, hi = max(0, pos - 59), min(len(d), pos + 3)
+    lo, hi = max(0, pos - (bars - 1)), min(len(d), pos + 3)
     dd = d.iloc[lo:hi]
     x = np.arange(len(dd))
     sig_x = pos - lo
@@ -84,12 +107,43 @@ def chart_trade(row, daily, det, path, label):
             crossed = prev_close < u < float(d["close"].iloc[pos])
             ax.axhline(u, color="#ff8c00" if crossed else "#9a9a9a", linestyle="--", linewidth=1.2 if crossed else 0.8, zorder=2)
             ax.text(len(dd) - 0.4, u, f"{u:.2f}", va="center", fontsize=8, color="#ff8c00" if crossed else "#707070")
+    close_all = d["close"].astype(float)
+    mas = {"EMA9": close_all.ewm(span=9, adjust=False).mean(), "EMA20": close_all.ewm(span=20, adjust=False).mean(),
+           "SMA200": close_all.rolling(200).mean()}
+    ref_price = float(row["price"]) if "price" in row.index and pd.notna(row["price"]) else float(d["close"].iloc[pos])
+    off = []
+    for name, ser in mas.items():
+        vis = ser.iloc[lo:hi]
+        if vis.notna().any():
+            col, lw = MA_STYLE[name]
+            ax.plot(x, vis.values, color=col, linewidth=lw, zorder=3, label=name)
+            last = float(ser.iloc[pos])
+            if np.isfinite(last):
+                if last > y_hi and last < ref_price * 3:
+                    y_hi = last * 1.04
+                elif last < y_lo and last > ref_price / 3:
+                    y_lo = last * 0.96
+                role = "R" if last > ref_price else "S"
+                if y_lo <= last <= y_hi:
+                    ax.text(len(dd) - 0.4, last, f"{name} {last:.2f} {role}", va="center", fontsize=8, color=col, fontweight="bold",
+                            bbox=dict(facecolor="white", edgecolor="none", pad=0.5, alpha=0.8))
+                else:
+                    off.append(f"{name} {last:.2f} {role} (off-scale)")
+    if off:
+        ax.text(0.01, 0.97, "   ".join(off), transform=ax.transAxes, fontsize=8, va="top", color="#555555")
+    ax.legend(loc="upper left", bbox_to_anchor=(0.0, 0.93 if off else 1.0), fontsize=8, frameon=False, ncol=3)
+    target = ref_price * 1.20
+    if y_lo <= target <= y_hi * 1.15:
+        y_hi = max(y_hi, target * 1.03)
+        ax.axhline(target, color="#2e8b57", linestyle=":", linewidth=1.2, zorder=2)
+        ax.text(0.2, target, "+20% headroom line", va="bottom", fontsize=8, color="#2e8b57")
     ax.set_ylim(y_lo, y_hi)
-    ax.set_xlim(-1, len(dd) + 1.2)
-    ax.set_xticks(x[::6])
-    ax.set_xticklabels([dd.index[i].strftime("%Y-%m-%d") for i in range(0, len(dd), 6)], fontsize=7)
+    ax.set_xlim(-1, len(dd) + 1.6)
+    step = 21 if len(dd) > 120 else 6
+    ax.set_xticks(x[::step])
+    ax.set_xticklabels([dd.index[i].strftime("%Y-%m-%d") for i in range(0, len(dd), step)], fontsize=7)
     ax.grid(axis="y", color="#e8e8e8", linewidth=0.6)
-    ax.set_title("daily (yellow = signal day, blue = next day; orange line = atr_pivot level crossed)", fontsize=9, loc="left")
+    ax.set_title("daily (yellow = signal day, blue = next day; orange dashed = atr_pivot level crossed; MA label: R = resistance above price, S = support below)", fontsize=9, loc="left")
 
     f = five_min(sym, sig.date())
     days = sorted(f["day"].unique())[:2]
@@ -111,7 +165,7 @@ def chart_trade(row, daily, det, path, label):
         _, idx = pos_map[dday]
         c = np.where(g["rth"], np.where(g["close"] >= g["open"], UP, DOWN), EXT)
         candles(ax2, idx, g["open"].values, g["high"].values, g["low"].values, g["close"].values, c, width=0.75)
-        ax2.plot(idx, g["vwap"].values, color="#1f4fd8", linewidth=1.3, zorder=5, label="session VWAP (RTH)")
+        ax2.plot(idx, g["vwap"].values, color=VWAP_COLOR, linewidth=1.4, zorder=5, label="session VWAP (RTH)")
         axv.bar(idx, g["volume"].values, width=0.75, color=c)
         ax2.axvline(idx[0] - 3, color="#cccccc", linewidth=0.8)
     h, l = ax2.get_legend_handles_labels()
@@ -151,7 +205,23 @@ def chart_trade(row, daily, det, path, label):
     fig.suptitle(f"{label}  {sym}  signal {sig.date()}  ret {row['ret']:+.1%}  entry {row['entry']:.2f} -> exit {row['exit']:.2f}"
                  f"{gap_txt}  exit={row.get('exit_reason', 'next_open')}"
                  f"  {row['flag'] if isinstance(row['flag'], str) else ''}", fontsize=11, y=0.96)
-    fig.subplots_adjust(left=0.05, right=0.96, top=0.92, bottom=0.05)
+    reg = []
+    if "score" in row.index and pd.notna(row["score"]):
+        reg.append(f"rank score {row['score']:+.1f}")
+    if "headroom" in row.index and pd.notna(row["headroom"]):
+        reg.append("headroom to next resistance " + ("none (blue sky)" if row["headroom"] >= 9 else f"{row['headroom']:+.1%}"))
+    for k, lab in (("spy_day", "SPY"), ("iwm_day", "IWM")):
+        if k in row.index and pd.notna(row[k]):
+            reg.append(f"{lab} {row[k]:+.2%}")
+    if "above_sma200" in row.index and pd.notna(row["above_sma200"]):
+        reg.append("stock " + ("above" if row["above_sma200"] == 1 else "below") + " 200 SMA")
+    hl = headlines(sym, row["entry_time"])
+    nl = chr(10)
+    news_txt = ("News (48h before entry, company-specific): " + ("" if hl else "none found in Alpaca/Benzinga") + nl +
+                nl.join(f"  {ts}  {h[:150]}" for ts, h in hl))
+    fig.text(0.05, 0.012, ("Market at 15:55: " + "  ".join(reg) + nl if reg else "") + news_txt,
+             fontsize=8, va="bottom", color="#333333")
+    fig.subplots_adjust(left=0.05, right=0.96, top=0.92, bottom=0.12)
     fig.savefig(path)
     plt.close(fig)
 
@@ -160,18 +230,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", default="results/pit_trades_atr_pivot_v2.csv")
     ap.add_argument("--n", type=int, default=10)
+    ap.add_argument("--bars", type=int, default=273, help="daily bars shown (273 = 13 months, as available)")
     ap.add_argument("--out", default="data/charts/trades/v2")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     t = pd.read_csv(a.csv, parse_dates=["entry_time", "exit_time"])
     daily = pd.read_parquet("data/pit/daily_pit.parquet", columns=["date", "symbol", "open", "high", "low", "close", "volume"])
-    det = ResistanceDetector(ATR_PIVOT_CONFIG)
+    det = ResistanceDetector(replace(ATR_PIVOT_CONFIG, lookback_bars=a.bars))
     sel = [("best", r) for _, r in t.nlargest(a.n, "ret").iterrows()] + [("worst", r) for _, r in t.nsmallest(a.n, "ret").iterrows()]
     html = ["<html><body style='font-family:sans-serif'><h2>Best / worst trades</h2>"]
     for i, (kind, r) in enumerate(sel):
         name = f"{kind}_{i % a.n + 1:02d}_{r['symbol']}_{str(r['entry_time'])[:10]}.png"
         try:
-            chart_trade(r, daily, det, os.path.join(a.out, name), f"{kind.upper()} #{i % a.n + 1}")
+            chart_trade(r, daily, det, os.path.join(a.out, name), f"{kind.upper()} #{i % a.n + 1}", a.bars)
             html.append(f"<h3>{name}</h3><img src='{name}' style='max-width:100%'>")
             print("wrote", name, f"{r['ret']:+.1%}")
         except Exception as e:
