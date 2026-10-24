@@ -15,6 +15,7 @@ from src.data.simfin_store import SimFinStore
 from src.data.sentiment_client import FMPSentimentClient
 from src.strategies.humbled_bullish_overnight import HumbledBullishOvernight
 from src.backtest.engine import BacktestEngine, MultiSymbolBacktest
+from src.utils import timing
 
 
 def get_backtest_universe():
@@ -344,28 +345,32 @@ def run_pit_backtest():
     START = os.getenv("BACKTEST_START_DATE", "2024-10-18")
     END = os.getenv("BACKTEST_END_DATE", "2100-01-01")
 
-    cands = pd.read_parquet("data/pit/candidates.parquet")
-    cands = cands[(cands["date"] >= START) & (cands["date"] <= END)]
-    daily = pd.read_parquet(
-        "data/pit/daily_pit.parquet",
-        columns=["date", "symbol", "open", "high", "low", "close", "volume", "delisted_utc"],
-    )
+    with timing.stage("load candidates+daily parquet"):
+        cands = pd.read_parquet("data/pit/candidates.parquet")
+        cands = cands[(cands["date"] >= START) & (cands["date"] <= END)]
+        daily = pd.read_parquet(
+            "data/pit/daily_pit.parquet",
+            columns=["date", "symbol", "open", "high", "low", "close", "volume", "delisted_utc"],
+        )
     from src.data.pit_integrity import load_minute
-    minute = load_minute(symbols=set(cands["symbol"]))  # overlapping day files repeat bars
-    if str(getattr(minute["timestamp"].dtype, "tz", None)) != "America/New_York":
-        minute["timestamp"] = pd.to_datetime(minute["timestamp"], utc=True).dt.tz_convert("America/New_York")
+    with timing.stage("load minute bars (load_minute + tz convert)"):
+        minute = load_minute(symbols=set(cands["symbol"]))  # overlapping day files repeat bars
+        if str(getattr(minute["timestamp"].dtype, "tz", None)) != "America/New_York":
+            minute["timestamp"] = pd.to_datetime(minute["timestamp"], utc=True).dt.tz_convert("America/New_York")
     print(f"candidate symbol-days: {len(cands)}, symbols: {cands['symbol'].nunique()}, "
           f"minute rows: {len(minute)}")
 
     symbols = sorted(cands["symbol"].unique())
-    contexts = build_symbol_contexts_pit(symbols, START, END, REQUIRE_NEWS)
+    with timing.stage("build contexts (simfin)"):
+        contexts = build_symbol_contexts_pit(symbols, START, END, REQUIRE_NEWS)
     news_path = os.path.join("data", "pit", "news", "news.parquet")
-    if os.path.exists(news_path):
-        news_all = pd.read_parquet(news_path)
-        for s, g in news_all.groupby("symbol"):
-            if s in contexts:
-                contexts[s]["news_df"] = g.sort_values("created_at").reset_index(drop=True)
-        print(f"news: {len(news_all)} articles for {news_all['symbol'].nunique()} symbols")
+    with timing.stage("load news"):
+        if os.path.exists(news_path):
+            news_all = pd.read_parquet(news_path)
+            for s, g in news_all.groupby("symbol"):
+                if s in contexts:
+                    contexts[s]["news_df"] = g.sort_values("created_at").reset_index(drop=True)
+            print(f"news: {len(news_all)} articles for {news_all['symbol'].nunique()} symbols")
 
     from src.backtest import pit_runner
 
@@ -394,23 +399,28 @@ def run_pit_backtest():
         },
     }
 
-    daily_by = {s: g.set_index("date").sort_index() for s, g in daily.groupby("symbol")}
-    minute_by = {s: g.set_index("timestamp").sort_index() for s, g in minute.groupby("symbol")}
-    cand_dates = {s: set(pd.DatetimeIndex(g["date"]).date) for s, g in cands.groupby("symbol")}
+    with timing.stage("group by symbol (daily_by/minute_by/cand_dates)"):
+        daily_by = {s: g.set_index("date").sort_index() for s, g in daily.groupby("symbol")}
+        minute_by = {s: g.set_index("timestamp").sort_index() for s, g in minute.groupby("symbol")}
+        cand_dates = {s: set(pd.DatetimeIndex(g["date"]).date) for s, g in cands.groupby("symbol")}
 
-    cache = pit_runner.load_cache(LOOKBACK) if USE_CACHE else {}
+    with timing.stage("load ladder cache"):
+        cache = pit_runner.load_cache(LOOKBACK) if USE_CACHE else {}
     tasks = [
         (s, daily_by[s], minute_by[s], contexts.get(s), cand_dates[s], cfg, cache.get(s))
         for s in symbols if s in daily_by and s in minute_by
     ]
     print(f"processes: {PROCESSES}, ladder cache: {'on, ' + str(len(cache)) + ' symbols cached' if USE_CACHE else 'off'}")
-    trades, forced, updates = pit_runner.run_symbols(tasks, PROCESSES)
+    with timing.stage("run_symbols (parallel)"):
+        trades, forced, updates = pit_runner.run_symbols(tasks, PROCESSES)
     if USE_CACHE and updates:
-        cache.update(updates)
-        pit_runner.save_cache(cache, LOOKBACK)
+        with timing.stage("save ladder cache"):
+            cache.update(updates)
+            pit_runner.save_cache(cache, LOOKBACK)
         print(f"ladder cache updated for {len(updates)} symbols")
 
-    all_t = pd.DataFrame(trades)
+    with timing.stage("build trades DataFrame"):
+        all_t = pd.DataFrame(trades)
     print("\n" + "=" * 60)
     print(f"RESULTS (resistance={METHOD}, news_required={REQUIRE_NEWS}, commission={COMMISSION})")
     print("=" * 60)
@@ -425,34 +435,38 @@ def run_pit_backtest():
     entry_day = pd.to_datetime(all_t["entry_time"].astype(str).str[:10])
     is_test = entry_day >= test_start
     os.makedirs(os.path.join("results", "holdout"), exist_ok=True)
-    for name in variants:
-        v = all_t[all_t["variant"] == name].drop(columns="variant")
-        v[~is_test[v.index]].to_csv(os.path.join("results", f"pit_trades_{PREFIX}_{name}.csv"), index=False)
-        v[is_test[v.index]].to_csv(os.path.join("results", "holdout", f"pit_trades_{PREFIX}_{name}.csv"), index=False)
+    with timing.stage("write result CSVs"):
+        for name in variants:
+            v = all_t[all_t["variant"] == name].drop(columns="variant")
+            v[~is_test[v.index]].to_csv(os.path.join("results", f"pit_trades_{PREFIX}_{name}.csv"), index=False)
+            v[is_test[v.index]].to_csv(os.path.join("results", "holdout", f"pit_trades_{PREFIX}_{name}.csv"), index=False)
     shown = all_t[~is_test] if which == "dev" else all_t[is_test] if which == "test" else all_t
     print(f"set shown: {which} (holdout starts {test_start.date()}; {int(is_test.sum() / len(variants))} "
           f"holdout trades kept out of the dev files and not summarized unless BACKTEST_SET=test|all)")
     rows = []
-    for name in variants:
-        t = shown[shown["variant"] == name]
-        row = summarize(t, MAX_POS)
-        row["exits"] = ", ".join(f"{k}={n}" for k, n in t["exit_reason"].value_counts().items())
-        row["partial_exit"] = int((t["flag"] == "partial_exit").sum())
-        rows.append({"variant": name, **row})
+    with timing.stage("summarize variants"):
+        for name in variants:
+            t = shown[shown["variant"] == name]
+            row = summarize(t, MAX_POS)
+            row["exits"] = ", ".join(f"{k}={n}" for k, n in t["exit_reason"].value_counts().items())
+            row["partial_exit"] = int((t["flag"] == "partial_exit").sum())
+            rows.append({"variant": name, **row})
     summary = pd.DataFrame(rows).set_index("variant")
     with pd.option_context("display.width", 250, "display.max_columns", 30, "display.float_format", "{:.2f}".format):
         print(summary)
     from src.backtest import kfold as K
-    for name in variants:
-        kt = shown[shown["variant"] == name].drop(columns="variant")
-        if len(kt):
-            kdays = pd.bdate_range(pd.to_datetime(kt["entry_time"].astype(str).str[:10]).min(),
-                                   pd.to_datetime(kt["entry_time"].astype(str).str[:10]).max())
-            krows, ksummary = K.kfold_stability(kt, kdays, rank="rel_vol", pool=kt, label=f"{name}|{which}")
-            print(f"k=5 {name} ({which}): profitable={ksummary['folds_profit']}, "
-                  f"beats_random={ksummary['folds_beat_random']}, t={ksummary['fold_t']:.2f}, "
-                  f"best_fold_share={ksummary['best_fold_share']:.2f}, p={ksummary['kfold_p']:.3f}")
-    summary.to_csv(os.path.join("results", f"pit_summary_{PREFIX}_{which}.csv"))
+    with timing.stage("kfold stability"):
+        for name in variants:
+            kt = shown[shown["variant"] == name].drop(columns="variant")
+            if len(kt):
+                kdays = pd.bdate_range(pd.to_datetime(kt["entry_time"].astype(str).str[:10]).min(),
+                                       pd.to_datetime(kt["entry_time"].astype(str).str[:10]).max())
+                krows, ksummary = K.kfold_stability(kt, kdays, rank="rel_vol", pool=kt, label=f"{name}|{which}")
+                print(f"k=5 {name} ({which}): profitable={ksummary['folds_profit']}, "
+                      f"beats_random={ksummary['folds_beat_random']}, t={ksummary['fold_t']:.2f}, "
+                      f"best_fold_share={ksummary['best_fold_share']:.2f}, p={ksummary['kfold_p']:.3f}")
+    with timing.stage("write summary csv"):
+        summary.to_csv(os.path.join("results", f"pit_summary_{PREFIX}_{which}.csv"))
     r = cfg["realism"]
     print(f"portfolio: top {MAX_POS}/day by relative volume, equal weight, fully invested, compounding")
     print(f"fills: ${r['size_usd']:,.0f}/trade, <= {r['participation']:.0%} of bar volume, slippage "
@@ -481,6 +495,7 @@ def build_symbol_contexts_pit(symbols, start, end, with_news):
 
 def main():
     """Main application entry point"""
+    timing.install("main")
     print("\n" + "=" * 60)
     print("HUMBLED TRADER BULLISH OVERNIGHT STRATEGY")
     print("=" * 60)

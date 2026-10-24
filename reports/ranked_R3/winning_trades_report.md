@@ -423,7 +423,7 @@ Trade outcomes by tercile of market variable:
 | IWM 20-day trend | mid | 133 | 47.37 | 8.27 | 1.71 | -0.33 | 1.76 | 2.27 | 56.90 |
 | IWM 20-day trend | high | 133 | 34.59 | 6.77 | -0.45 | -0.82 | 0.84 | -0.60 | -14.91 |
 
-**Breadth ('hype') indicator.** The number of candidate breakouts that day relative to its prior 20-day average: Spearman vs that day's mean trade return +0.081 (p = 0.238); vs number of big winners -0.028.
+**Breadth ('hype') indicator.** The number of candidate breakouts that day relative to its prior 20-day average: Spearman vs that day's mean trade return +0.079 (p = 0.248); vs number of big winners -0.030.
 
 ![06_market](figures/06_market.png)
 

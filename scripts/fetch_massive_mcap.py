@@ -131,9 +131,17 @@ def write_coverage(cache):
     checked = sample.merge(cache[cache["validation_only"]][["symbol", "day", "market_cap"]], on=["symbol", "day"], how="inner")
     ratio = checked["market_cap"] / checked["mcap_pit"]
     ratio = ratio.replace([np.inf, -np.inf], np.nan).dropna()
-    a = cache["weighted_shares"].abs()
-    b = cache["share_class_shares"].abs()
+    a = pd.to_numeric(cache["weighted_shares"], errors="coerce").abs()
+    b = pd.to_numeric(cache["share_class_shares"], errors="coerce").abs()
     suspect = a.gt(0) & b.gt(0) & ((a / b > 5) | (b / a > 5))
+    status_kinds = {}
+    for status in ("not_found", "no_data"):
+        rows = cache[cache["status"] == status]
+        status_kinds[status] = {
+            "rows": len(rows),
+            "types": rows["type"].fillna("unknown").value_counts().to_dict(),
+            "active": rows["active"].value_counts(dropna=False).to_dict(),
+        }
     lines = [
         "# Massive market-cap enrichment coverage",
         "",
@@ -142,6 +150,7 @@ def write_coverage(cache):
         f"- Rows in ranked table: {len(source)}; missing SimFin mcap rows: {int((~before).sum())}.",
         f"- Final mcap coverage: {int(after.sum())}/{len(after)} ({after.mean():.1%}); source counts: {merged['mcap_src'].value_counts().to_dict()}.",
         f"- Massive statuses: {cache['status'].value_counts().to_dict()}.",
+        f"- Not-found/no-data kinds: {status_kinds}.",
         f"- Suspect share-count rows (>5x weighted/share-class): {int(suspect.sum())}; market_cap is retained as returned.",
         f"- mcap<200M before/after: {int(before_filter.sum())}/{int(after_filter.sum())}; moved in={int((~before_filter & after_filter).sum())}, moved out={int((before_filter & ~after_filter).sum())}.",
         "",

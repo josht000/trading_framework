@@ -43,6 +43,7 @@ from scipy.stats import norm
 
 from src.backtest.pit_metrics import select_trades, simulate_account
 from src.data.pit_integrity import dedupe_trades
+from src.utils import timing
 
 REGISTRY = os.path.join("results", "trial_registry.jsonl")
 MARKET = os.path.join("data", "pit", "market")
@@ -343,12 +344,13 @@ def partition(trades, days, pool=None, universe=None, rank="rel_vol", bias=None,
 
 def run_partition(trades, days, rank="rel_vol", pool=None, areas=(), A=None, A_areas=(), oos=False, **kw):
     """partition() with the bias headline from bias_estimate(); oos=True for the locked test period (bias 0 by construction)."""
-    dr = simulate_account(trades, max_pos=kw.get("max_pos", 5), rank=rank, all_days=days)[2]
-    sd = float(np.log1p(dr).std() * sqrt(len(days)))
-    total_log = float(np.log1p(dr).sum())
-    return partition(trades, days, pool=pool, rank=rank,
-                     bias=bias_estimate(list(areas), len(days), A, A_areas, sd, oos, total_log=total_log),
-                     **kw)
+    with timing.stage("run_partition"):
+        dr = simulate_account(trades, max_pos=kw.get("max_pos", 5), rank=rank, all_days=days)[2]
+        sd = float(np.log1p(dr).std() * sqrt(len(days)))
+        total_log = float(np.log1p(dr).sum())
+        return partition(trades, days, pool=pool, rank=rank,
+                         bias=bias_estimate(list(areas), len(days), A, A_areas, sd, oos, total_log=total_log),
+                         **kw)
 
 
 # ---------------------------------------------------------------- tables, plots
@@ -377,32 +379,33 @@ def flat(res):
 
 def plot_partition(rows, path, labels=None):
     """Stacked bars Trend (blue) / Skill (green) / Bias (red) summing to Total (dot); one panel per row."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    rows = list(rows)
-    fig, axes = plt.subplots(1, len(rows), figsize=(3.6 * len(rows) + 1, 4.6), squeeze=False)
-    for ax, r, lab in zip(axes[0], rows, labels or [""] * len(rows)):
-        vals = [("Trend", r["trend_iwm"], "#4472c4"), ("Skill", r["skill"], "#70ad47"), ("TrainingBias", r["bias"], "#d9534f")]
-        pos = neg = 0.0
-        for name, v, c in vals:
-            if not np.isfinite(v):
-                continue
-            base = pos if v >= 0 else neg
-            ax.bar(0, v, bottom=base, color=c, width=0.55, label=name)
-            pos, neg = (pos + v, neg) if v >= 0 else (pos, neg + v)
-        ax.plot([0], [r["total_log"]], "ko", ms=9, label="Total")
-        ax.axhline(0, color="#888888", lw=0.8)
-        ax.set_xticks([])
-        ax.set_ylabel("log return")
-        pct = r["skill_pct"]
-        ax.set_title((f"Skill = {100 * pct:.0f}% of TotalReturn" if np.isfinite(pct) else "Skill = n/a % of TotalReturn") + (f"\n{lab}" if lab else ""), fontsize=10)
-        ax.grid(axis="y", color="#eeeeee")
-    axes[0][0].legend(frameon=True, facecolor="white", edgecolor="#999999", framealpha=1.0, fontsize=8, loc="best").set_zorder(10)
-    fig.tight_layout()
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    fig.savefig(path, dpi=110)
-    plt.close(fig)
+    with timing.stage("plot_partition"):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        rows = list(rows)
+        fig, axes = plt.subplots(1, len(rows), figsize=(3.6 * len(rows) + 1, 4.6), squeeze=False)
+        for ax, r, lab in zip(axes[0], rows, labels or [""] * len(rows)):
+            vals = [("Trend", r["trend_iwm"], "#4472c4"), ("Skill", r["skill"], "#70ad47"), ("TrainingBias", r["bias"], "#d9534f")]
+            pos = neg = 0.0
+            for name, v, c in vals:
+                if not np.isfinite(v):
+                    continue
+                base = pos if v >= 0 else neg
+                ax.bar(0, v, bottom=base, color=c, width=0.55, label=name)
+                pos, neg = (pos + v, neg) if v >= 0 else (pos, neg + v)
+            ax.plot([0], [r["total_log"]], "ko", ms=9, label="Total")
+            ax.axhline(0, color="#888888", lw=0.8)
+            ax.set_xticks([])
+            ax.set_ylabel("log return")
+            pct = r["skill_pct"]
+            ax.set_title((f"Skill = {100 * pct:.0f}% of TotalReturn" if np.isfinite(pct) else "Skill = n/a % of TotalReturn") + (f"\n{lab}" if lab else ""), fontsize=10)
+            ax.grid(axis="y", color="#eeeeee")
+        axes[0][0].legend(frameon=True, facecolor="white", edgecolor="#999999", framealpha=1.0, fontsize=8, loc="best").set_zorder(10)
+        fig.tight_layout()
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        fig.savefig(path, dpi=110)
+        plt.close(fig)
 
 
 def fmt_pct(x, d=1):

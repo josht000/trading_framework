@@ -25,6 +25,7 @@ from src.backtest import features_extra as fx
 from src.backtest import ranking as rk
 from src.backtest.pit_metrics import select_trades, simulate_account
 from src.data.market_cap import merge_market_cap
+from src.utils import timing
 
 OUT = os.path.join("reports", "ranking")
 TABLE = os.path.join("reports", "ranked_table.parquet")
@@ -357,30 +358,39 @@ def final_test(T, best_w, best_th, md):
 
 
 def main():
+    timing.install("rank_test")
     ap = argparse.ArgumentParser()
     ap.add_argument("--rebuild", action="store_true")
     ap.add_argument("--final", action="store_true")
     ap.add_argument("--iters", type=int, default=700)
     a = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
-    T = build_table(a.rebuild)
+    with timing.stage("build_table"):
+        T = build_table(a.rebuild)
     md = ["# Trade ranking experiments (dev set)\n"]
     wpath = os.path.join("results", "ranking_weights.json")
     if a.final:
         cfg = json.load(open(wpath))
-        final_test(T, cfg["weights"], cfg["threshold"], md)
-        print("\n".join(md))
+        with timing.stage("final_test"):
+            final_test(T, cfg["weights"], cfg["threshold"], md)
+        with timing.stage("write report"):
+            print("\n".join(md))
         return
     md.append(f"{len(T[T['period'] == 'dev'])} dev trades (pm_target25_v2 exits, 13-month atr_pivot); score components: {', '.join(rk.COMPONENTS)}; "
               f"default weights {rk.DEFAULT_WEIGHTS}. OTC tickers flagged: {int(T['is_otc'].sum())} trades; trades with EDGAR data: {100 * T['e_has_data'].mean():.0f}%.\n")
-    dev_experiments(T, md)
-    best_w, best_th, corr = tune_weights(T, md, a.iters)
-    ridge_experiment(T, md)
-    final_dev_table(T, best_w, best_th, md)
+    with timing.stage("dev_experiments"):
+        dev_experiments(T, md)
+    with timing.stage("tune_weights"):
+        best_w, best_th, corr = tune_weights(T, md, a.iters)
+    with timing.stage("ridge_experiment"):
+        ridge_experiment(T, md)
+    with timing.stage("final_dev_table"):
+        final_dev_table(T, best_w, best_th, md)
     path = os.path.join("reports", "ranking_report.md")
-    open(path, "w", encoding="utf-8").write("\n".join(md))
-    print("\n".join(md))
-    print("wrote", path)
+    with timing.stage("write report"):
+        open(path, "w", encoding="utf-8").write("\n".join(md))
+        print("\n".join(md))
+        print("wrote", path)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ import pandas as pd
 
 from src.screening.historical import ATR_PIVOT_CONFIG
 from src.strategies.humbled_bullish_overnight import HumbledBullishOvernight
+from src.utils import timing
 
 CACHE_DIR = os.path.join("data", "pit", "ladder_cache")
 T_OPEN, T_CLOSE = pd.Timestamp("09:30").time(), pd.Timestamp("16:00").time()
@@ -72,18 +73,26 @@ def valid_levels(entry, daily_df):
 def process_symbol(task):
     s, daily_df, minute_df, ctx, cand_dates, cfg, cached = task
     strategy = HumbledBullishOvernight(**cfg["strategy"])
-    levels = valid_levels(cached, daily_df) if cfg["use_cache"] else {}
+    with timing.wstage("cache fingerprint"):
+        levels = valid_levels(cached, daily_df) if cfg["use_cache"] else {}
     n_before = len(levels)
     strategy.screener.ladder_cache = levels if cfg["use_cache"] else None
     try:
-        sig = strategy.apply_strategy(daily_df, minute_df, ctx, entry_dates=cand_dates)
+        with timing.wstage("apply_strategy (screen+ladder)"):
+            sig = strategy.apply_strategy(daily_df, minute_df, ctx, entry_dates=cand_dates)
     except Exception as e:
         return s, [], 0, None, f"{s}: error {e}"
     new_entry = None
     if cfg["use_cache"] and len(levels) > n_before:
         new_entry = {"n": len(daily_df), "fp": _fp(daily_df, len(daily_df)), "levels": levels}
-    trades, forced = build_trades(s, sig, daily_df, cfg, (ctx or {}).get("news_df"))
+    with timing.wstage("build_trades"):
+        trades, forced = build_trades(s, sig, daily_df, cfg, (ctx or {}).get("news_df"))
     return s, trades, forced, new_entry, None
+
+
+def _process_task(task):
+    res = process_symbol(task)
+    return res, timing.drain_worker()
 
 
 def _atr_pct(daily_df):
@@ -228,7 +237,8 @@ def build_trades(s, sig, daily_df, cfg, news=None):
     exits = sig.index[sig["exit"]]
     tm = sig.index.time
     t_ah = pd.Timestamp("16:00")
-    atr_pct = _atr_pct(daily_df)
+    with timing.wstage("atr_pct"):
+        atr_pct = _atr_pct(daily_df)
     close_a = sig["close"].to_numpy(dtype=float)
     vol_a = sig["volume"].to_numpy(dtype=float)
     trades, forced = [], 0
@@ -240,84 +250,88 @@ def build_trades(s, sig, daily_df, cfg, news=None):
         prev = atr_pct[atr_pct.index < pd.Timestamp(day)]
         prior_atr = float(prev.iloc[-1]) if len(prev) else float("nan")
 
-        shares = rz["size_usd"] / ep0
-        pos = sig.index.get_loc(ts)
-        end = pos
-        while end + 1 < len(sig) and sig.index[end + 1].date() == day and tm[end + 1] < T_CLOSE:
-            end += 1
-        pe, got, _, _ = _fill(tm[pos:end + 1], close_a[pos:end + 1], vol_a[pos:end + 1], shares, rz, "buy")
+        with timing.wstage("entry fill+get_loc"):
+            shares = rz["size_usd"] / ep0
+            pos = sig.index.get_loc(ts)
+            end = pos
+            while end + 1 < len(sig) and sig.index[end + 1].date() == day and tm[end + 1] < T_CLOSE:
+                end += 1
+            pe, got, _, _ = _fill(tm[pos:end + 1], close_a[pos:end + 1], vol_a[pos:end + 1], shares, rz, "buy")
         fill_frac = got / shares
         if fill_frac < rz["min_fill"]:
             continue
         shares = got
-        feats = {**_features(sig, ts, ep0, daily_df, day, prior_atr), **_path(sig, tm, ts, ep0, day, later),
-                 **_ma_features(daily_df, day, ep0), **_news_features(news, ts), "fill_entry": fill_frac,
-                 "headroom": float(sig.at[ts, "headroom"]) if "headroom" in sig.columns else float("nan")}
+        with timing.wstage("entry features (_features/_path/_ma/_news)"):
+            feats = {**_features(sig, ts, ep0, daily_df, day, prior_atr), **_path(sig, tm, ts, ep0, day, later),
+                     **_ma_features(daily_df, day, ep0), **_news_features(news, ts), "fill_entry": fill_frac,
+                     "headroom": float(sig.at[ts, "headroom"]) if "headroom" in sig.columns else float("nan")}
 
         for name, v in cfg["variants"].items():
             hit = None
-            if v.get("rules", True):
-                t1 = (t_ah + pd.Timedelta(minutes=v.get("window_min", 45))).time()
-                ah = sig[(sig.index > ts) & (sig.index.date == day) & (tm >= T_CLOSE) & (tm <= t1)]
-                if len(ah):
-                    chg = ah["close"] / pe - 1
-                    stop = v.get("stop")
-                    if v.get("atr_k"):
-                        stop = float(np.clip(v["atr_k"] * prior_atr, v["atr_min"], v["atr_max"])) \
-                            if np.isfinite(prior_atr) else v["atr_min"]
-                    below = (chg <= -stop) if stop else pd.Series(False, index=chg.index)
-                    n = v.get("confirm", 1)
-                    if n > 1:
-                        below = below.astype(int).rolling(n).sum() == n
-                    above = (chg >= v["target"]) if v.get("target") else pd.Series(False, index=chg.index)
-                    h = chg[below | above]
-                    if len(h):
-                        hit = (h.index[0], "ah_stop" if below.loc[h.index[0]] else "ah_target")
-            if hit is None and len(later) and v.get("smart"):
-                nd = later[0].date()
-                deadline = pd.Timestamp(v.get("deadline", "10:15")).time()
-                opening = sig[(sig.index.date == nd) & (tm >= T_OPEN) & (tm <= deadline)]
-                if len(opening):
-                    chg = opening["close"] / pe - 1
-                    peak = chg.cummax()
-                    trail = float(v.get("trail", 0.06))
-                    activate = float(v.get("activate", 0.05))
-                    stop = (peak >= activate) & ((chg - peak) <= -trail)
-                    h = chg[stop]
-                    if len(h):
-                        hit = (h.index[0], "smart_trail")
-                    else:
-                        hit = (opening.index[-1], "smart_deadline")
-            if hit is None and len(later) and (v.get("pm_target") or v.get("pm_stop")):
-                nd = later[0].date()
-                pm = sig[(sig.index.date == nd) & (tm >= _pm_start(v)) & (tm < T_OPEN)]
-                if len(pm):
-                    chg = pm["close"] / pe - 1
-                    up = (chg >= v["pm_target"]) if v.get("pm_target") else pd.Series(False, index=chg.index)
-                    dn = (chg <= -v["pm_stop"]) if v.get("pm_stop") else pd.Series(False, index=chg.index)
-                    h = chg[up | dn]
-                    if len(h):
-                        hit = (h.index[0], "pm_target" if up.loc[h.index[0]] else "pm_stop")
-            if hit is not None:
-                xs, reason = hit
-                px, partial = _exit_fill(sig, tm, xs, shares, rz)
-                flag = "partial_exit" if partial else ""
-            elif len(later):
-                xs, reason = later[0], "next_open"
-                px, partial = _exit_fill(sig, tm, xs, shares, rz)
-                flag = "partial_exit" if partial else ""
-            else:
-                after = daily_df[daily_df.index > pd.Timestamp(day)]
-                xp = float(after["close"].iloc[0]) if len(after) else ep0
-                px = xp * (1 - rz["slip_rth"])
-                xs = after.index[0] if len(after) else ts
-                reason, flag = "next_open", "no_next_session_bars"
-                forced += 1
-            trades.append({
-                "variant": name, "symbol": s, "entry_time": ts, "exit_time": xs, "entry": pe, "exit": px,
-                "ret": px / pe - 1 - 2 * commission, "flag": flag, "exit_reason": reason,
-                "delisted": delisted, **feats,
-            })
+            with timing.wstage("variant exit logic (AH/smart/pm scan)"):
+                if v.get("rules", True):
+                    t1 = (t_ah + pd.Timedelta(minutes=v.get("window_min", 45))).time()
+                    ah = sig[(sig.index > ts) & (sig.index.date == day) & (tm >= T_CLOSE) & (tm <= t1)]
+                    if len(ah):
+                        chg = ah["close"] / pe - 1
+                        stop = v.get("stop")
+                        if v.get("atr_k"):
+                            stop = float(np.clip(v["atr_k"] * prior_atr, v["atr_min"], v["atr_max"])) \
+                                if np.isfinite(prior_atr) else v["atr_min"]
+                        below = (chg <= -stop) if stop else pd.Series(False, index=chg.index)
+                        n = v.get("confirm", 1)
+                        if n > 1:
+                            below = below.astype(int).rolling(n).sum() == n
+                        above = (chg >= v["target"]) if v.get("target") else pd.Series(False, index=chg.index)
+                        h = chg[below | above]
+                        if len(h):
+                            hit = (h.index[0], "ah_stop" if below.loc[h.index[0]] else "ah_target")
+                if hit is None and len(later) and v.get("smart"):
+                    nd = later[0].date()
+                    deadline = pd.Timestamp(v.get("deadline", "10:15")).time()
+                    opening = sig[(sig.index.date == nd) & (tm >= T_OPEN) & (tm <= deadline)]
+                    if len(opening):
+                        chg = opening["close"] / pe - 1
+                        peak = chg.cummax()
+                        trail = float(v.get("trail", 0.06))
+                        activate = float(v.get("activate", 0.05))
+                        stop = (peak >= activate) & ((chg - peak) <= -trail)
+                        h = chg[stop]
+                        if len(h):
+                            hit = (h.index[0], "smart_trail")
+                        else:
+                            hit = (opening.index[-1], "smart_deadline")
+                if hit is None and len(later) and (v.get("pm_target") or v.get("pm_stop")):
+                    nd = later[0].date()
+                    pm = sig[(sig.index.date == nd) & (tm >= _pm_start(v)) & (tm < T_OPEN)]
+                    if len(pm):
+                        chg = pm["close"] / pe - 1
+                        up = (chg >= v["pm_target"]) if v.get("pm_target") else pd.Series(False, index=chg.index)
+                        dn = (chg <= -v["pm_stop"]) if v.get("pm_stop") else pd.Series(False, index=chg.index)
+                        h = chg[up | dn]
+                        if len(h):
+                            hit = (h.index[0], "pm_target" if up.loc[h.index[0]] else "pm_stop")
+            with timing.wstage("exit fill + trade record"):
+                if hit is not None:
+                    xs, reason = hit
+                    px, partial = _exit_fill(sig, tm, xs, shares, rz)
+                    flag = "partial_exit" if partial else ""
+                elif len(later):
+                    xs, reason = later[0], "next_open"
+                    px, partial = _exit_fill(sig, tm, xs, shares, rz)
+                    flag = "partial_exit" if partial else ""
+                else:
+                    after = daily_df[daily_df.index > pd.Timestamp(day)]
+                    xp = float(after["close"].iloc[0]) if len(after) else ep0
+                    px = xp * (1 - rz["slip_rth"])
+                    xs = after.index[0] if len(after) else ts
+                    reason, flag = "next_open", "no_next_session_bars"
+                    forced += 1
+                trades.append({
+                    "variant": name, "symbol": s, "entry_time": ts, "exit_time": xs, "entry": pe, "exit": px,
+                    "ret": px / pe - 1 - 2 * commission, "flag": flag, "exit_reason": reason,
+                    "delisted": delisted, **feats,
+                })
     return trades, forced
 
 
@@ -328,7 +342,9 @@ def run_symbols(tasks, processes, log=print):
 
     def consume(i, res):
         nonlocal forced
-        s, t, f, entry, err = res
+        timing_dict = res[1]
+        timing.merge_worker(timing_dict)
+        s, t, f, entry, err = res[0]
         if err:
             log(f"  {err}")
         trades.extend(t)
@@ -340,9 +356,9 @@ def run_symbols(tasks, processes, log=print):
 
     if processes <= 1:
         for i, task in enumerate(tasks, 1):
-            consume(i, process_symbol(task))
+            consume(i, _process_task(task))
     else:
         with ProcessPoolExecutor(max_workers=processes) as ex:
-            for i, res in enumerate(ex.map(process_symbol, tasks, chunksize=8), 1):
+            for i, res in enumerate(ex.map(_process_task, tasks, chunksize=8), 1):
                 consume(i, res)
     return trades, forced, updates

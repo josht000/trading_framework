@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from rank_test import STRATS, apply_keys, build_table, hygiene, md_table, run, table, walk_forward_ridge, with_score
 from src.backtest import ranking as rk
 from src.backtest.pit_metrics import select_trades, simulate_account
+from src.utils import timing
 
 START = 5000.0
 
@@ -290,17 +291,27 @@ def summary_table(T):
     print(section)
 
 
-if __name__ == "__main__":
+def main():
+    timing.install("rank_final")
     ap = argparse.ArgumentParser()
     ap.add_argument("--test", action="store_true")
     ap.add_argument("--charts", action="store_true")
     ap.add_argument("--summary", action="store_true")
     a = ap.parse_args()
-    T = build_table()
+    with timing.stage("build_table"):
+        T = build_table()
     if a.test:
-        test(T)
+        with timing.stage("test"):
+            test(T)
     if a.summary:
-        summary_table(T)
+        with timing.stage("summary"):
+            summary_table(T)
     if a.charts:
-        defs, prep, ridge = charts(T)
-        winners_report(T, defs, prep, ridge)
+        with timing.stage("charts"):
+            defs, prep, ridge = charts(T)
+        with timing.stage("winners_report"):
+            winners_report(T, defs, prep, ridge)
+
+
+if __name__ == "__main__":
+    main()

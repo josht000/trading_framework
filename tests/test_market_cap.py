@@ -5,13 +5,20 @@ from src.data.market_cap import merge_market_cap
 
 def test_market_cap_merge_priority_sources_and_suspect(tmp_path):
     enrichment = tmp_path / "massive.parquet"
-    pd.DataFrame({
+    e = pd.DataFrame({
         "symbol": ["A", "B", "C"],
         "day": pd.to_datetime(["2025-01-02"] * 3),
         "market_cap": [100.0, 200.0, 300.0],
         "weighted_shares": [10.0, 1.0, 1.0],
         "share_class_shares": [10.0, 10.0, 1.0],
-    }).to_parquet(enrichment, index=False)
+        "validation_only": [False, False, False],
+    })
+    e = pd.concat([e, pd.DataFrame({
+        "symbol": ["B"], "day": pd.to_datetime(["2025-01-02"]),
+        "market_cap": [999.0], "weighted_shares": [1.0],
+        "share_class_shares": [1.0], "validation_only": [True],
+    })], ignore_index=True)
+    e.to_parquet(enrichment, index=False)
     trades = pd.DataFrame({
         "symbol": ["A", "B", "C", "D"],
         "day": pd.to_datetime(["2025-01-02"] * 4),

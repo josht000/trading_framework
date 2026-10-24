@@ -22,6 +22,7 @@ import rank_final as RF
 from rank_test import apply_keys, build_table
 from src.backtest import partition as P
 from src.backtest import kfold as K
+from src.utils import timing
 
 OUT = Path("reports") / "partition"
 DEFAULT = ["base", "S1", "H3", "H2", "R3", "S1+tuned", "H3+tuned", "F30-M200-H20"]
@@ -64,35 +65,38 @@ def write(res, name_of=lambda k: k, tag=""):
     figs = OUT / "figures"
     figs.mkdir(parents=True, exist_ok=True)
     for per in ("dev", "test"):
-        keys = [k for k in res if k[1] == per]
-        rows = [{"setup": k[0], **P.flat(res[k])} for k in keys]
-        df = pd.DataFrame(rows).set_index("setup")
-        for k, row in zip(keys, rows):
-            pd.DataFrame([row]).to_csv(OUT / f"partition_{k[0].replace('+', '_').replace(' ', '_')}_{per}.csv", index=False)
-        df.to_csv(OUT / f"partition_all{tag}_{per}.csv")
-        cols = ["total_log", "trend_iwm", "trend_spy", "trend_beta_iwm", "beta_iwm", "beta_t_iwm",
-                "random_pick_universe", "random_pick_pool", "random_p_universe", "random_p_pool",
-                "bias_A", "bias_B", "bias", "bias_signed", "bias_sd", "bias_N_eff", "bias_unreliable",
-                "skill", "skill_vs_universe", "skill_vs_pool", "skill_pct", "skill_p",
-                "days_no_choice_pool", "days_no_choice_universe", "skill_ex5", "cost_est"]
-        show = df[cols].copy()
-        for c in ("total_log", "trend_iwm", "trend_spy", "trend_beta_iwm", "random_pick_universe",
-                  "random_pick_pool", "bias_A", "bias_B", "bias", "bias_signed", "bias_sd", "skill",
-                  "skill_vs_universe", "skill_vs_pool", "skill_pct", "skill_ex5", "cost_est"):
-            show[c] = 100 * show[c].astype(float)
-        md = [f"## Partition test, {per} (log-return percent points; skill_pct in %)", "",
-              "Skill is a residual: its interpretation depends on the trend baseline and on whether the random comparison is the universe or strategy-filtered pool. Bias-B is a pooled comparable-trial estimate; unreliable estimates exceed observed total.", "",
-              show.to_markdown(floatfmt=".2f"), "", "Bias source per row:", ""] + [f"- {k}: {v}" for k, v in df["bias_src"].items()]
-        (OUT / f"partition_all{tag}_{per}.md").write_text("\n".join(md) + "\n", encoding="utf-8")
-        main = [k for k in keys if k[0] in ("base", "S1", "H3", "R3")]
-        if main:
-            P.plot_partition([res[k] for k in main], figs / f"partition_all{tag}_{per}.png", [f"{k[0]} ({per})" for k in main])
-        for k in keys:
-            P.plot_partition([res[k]], figs / f"partition_{k[0].replace('+', '_')}_{per}.png", [f"{k[0]} ({per})"])
-        P.print_summary([(k[0], res[k]) for k in keys], f"Partition test, {per}")
+        with timing.stage("write/plots"):
+            keys = [k for k in res if k[1] == per]
+            rows = [{"setup": k[0], **P.flat(res[k])} for k in keys]
+            df = pd.DataFrame(rows).set_index("setup")
+            for k, row in zip(keys, rows):
+                pd.DataFrame([row]).to_csv(OUT / f"partition_{k[0].replace('+', '_').replace(' ', '_')}_{per}.csv", index=False)
+            df.to_csv(OUT / f"partition_all{tag}_{per}.csv")
+            cols = ["total_log", "trend_iwm", "trend_spy", "trend_beta_iwm", "beta_iwm", "beta_t_iwm",
+                    "random_pick_universe", "random_pick_pool", "random_p_universe", "random_p_pool",
+                    "bias_A", "bias_B", "bias", "bias_signed", "bias_sd", "bias_N_eff", "bias_unreliable",
+                    "skill", "skill_vs_universe", "skill_vs_pool", "skill_pct", "skill_p",
+                    "days_no_choice_pool", "days_no_choice_universe", "skill_ex5", "cost_est"]
+            show = df[cols].copy()
+            for c in ("total_log", "trend_iwm", "trend_spy", "trend_beta_iwm", "random_pick_universe",
+                      "random_pick_pool", "bias_A", "bias_B", "bias", "bias_signed", "bias_sd", "skill",
+                      "skill_vs_universe", "skill_vs_pool", "skill_pct", "skill_ex5", "cost_est"):
+                show[c] = 100 * show[c].astype(float)
+            md = [f"## Partition test, {per} (log-return percent points; skill_pct in %)", "",
+                  "Skill is a residual: its interpretation depends on the trend baseline and on whether the random comparison is the universe or strategy-filtered pool. Bias-B is a pooled comparable-trial estimate; unreliable estimates exceed observed total.", "",
+                  show.to_markdown(floatfmt=".2f"), "", "Bias source per row:", ""] + [f"- {k}: {v}" for k, v in df["bias_src"].items()]
+            (OUT / f"partition_all{tag}_{per}.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+            main = [k for k in keys if k[0] in ("base", "S1", "H3", "R3")]
+            if main:
+                P.plot_partition([res[k] for k in main], figs / f"partition_all{tag}_{per}.png", [f"{k[0]} ({per})" for k in main])
+            for k in keys:
+                P.plot_partition([res[k]], figs / f"partition_{k[0].replace('+', '_')}_{per}.png", [f"{k[0]} ({per})"])
+        with timing.stage("print_summary"):
+            P.print_summary([(k[0], res[k]) for k in keys], f"Partition test, {per}")
 
 
 def main():
+    timing.install("partition_report")
     ap = argparse.ArgumentParser()
     ap.add_argument("--names", nargs="*", default=DEFAULT)
     ap.add_argument("--csv")
@@ -102,20 +106,26 @@ def main():
     a = ap.parse_args()
     if a.csv:
         from src.backtest.market_regime import attach_regime
-        t = pd.read_csv(a.csv)
-        t["entry_time"] = t["entry_time"].astype(str)
-        t["day"] = pd.to_datetime(t["entry_time"].str[:10])
-        t = attach_regime(t)
-        sel = apply_keys(t, a.keys)
-        res = {}
-        for per, m in (("dev", sel["day"] < "2026-06-16"), ("test", sel["day"] >= "2026-06-16")):
-            x = sel[m]
-            if len(x):
-                days = pd.bdate_range(x["day"].min(), x["day"].max())
-                res[(a.name, per)] = P.run_partition(x, days, a.rank, pool=x, areas=["signal", "exit"], oos=per == "test")
+        with timing.stage("load CSV"):
+            t = pd.read_csv(a.csv)
+            t["entry_time"] = t["entry_time"].astype(str)
+            t["day"] = pd.to_datetime(t["entry_time"].str[:10])
+            t = attach_regime(t)
+            sel = apply_keys(t, a.keys)
+        with timing.stage("compute"):
+            res = {}
+            for per, m in (("dev", sel["day"] < "2026-06-16"), ("test", sel["day"] >= "2026-06-16")):
+                x = sel[m]
+                if len(x):
+                    days = pd.bdate_range(x["day"].min(), x["day"].max())
+                    res[(a.name, per)] = P.run_partition(x, days, a.rank, pool=x, areas=["signal", "exit"], oos=per == "test")
         write(res)
         return
-    write(compute(build_table(), a.names), tag="" if a.names == DEFAULT else "_subset")
+    with timing.stage("build_table"):
+        T = build_table()
+    with timing.stage("compute"):
+        res = compute(T, a.names)
+    write(res, tag="" if a.names == DEFAULT else "_subset")
 
 
 if __name__ == "__main__":

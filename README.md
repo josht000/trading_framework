@@ -310,7 +310,12 @@ WARNING.  Dev-only analysis: `scripts/analyze_exit_oracle.py` (tables `reports/e
 | `BACKTEST_SET` | `dev` | `dev`, `test`, or `all` (see evaluation protocol) |
 | `MAX_POSITIONS_PER_DAY` | 5 | portfolio keeps the top N trades per day by relative volume |
 
-Runtime: about 100 s for the full run (startup ~55 s, the rest parallel screening). Lazy evaluation skips the `atr_pivot` ladder on days that already fail the cheap criteria.
+Runtime: about 100 s for the full run (startup ~55 s, the rest parallel screening). Lazy evaluation skips the `atr_pivot` ladder on days that already fail the cheap criteria. Every run prints a timing summary; set `PROFILE=1` to also write a parent-process cProfile dump under `results/timing/`.
+
+```bash
+RESULTS_TAG=lb13 LOOKBACK_BARS=273 python main.py
+PROFILE=1 RESULTS_TAG=lb13 LOOKBACK_BARS=273 python main.py
+```
 
 Fill model: entry builds the position over 15:55-15:59 and exits sell bar by bar, each taking at most `PARTICIPATION` of that minute's volume at the bar close moved against us by the slippage. Portfolio: equal weight over the day's top N trades, fully invested overnight, compounding. Per-trade CSVs go to `results/pit_trades_atr_pivot_<variant>.csv` (with entry-time features such as `sig_day_ret`, `atr_pct`, `range_pct` and path columns `ah45_*`, `pm_last`, `open_ret`).
 
