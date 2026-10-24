@@ -1,5 +1,6 @@
 # Core dependencies
 vectorbt[full]==1.1.1
+xgboost==3.4.1
 
 # Alpaca data
 alpaca-py==0.44.0
@@ -30,3 +31,10 @@ torchvision==0.23.0
 transformers==5.18.0
 uvicorn==0.54.0
 huggingface_hub>=1.0.0
+
+# Live trading (see docs/live/PLAN.md)
+nautilus_trader==1.231.0
+tenacity==9.2.1
+pytest==9.1.1
+fsspec==2026.2.0  # pinned by nautilus_trader
+websockets>=10.4  # Schwab streamer (also an alpaca-py dependency)

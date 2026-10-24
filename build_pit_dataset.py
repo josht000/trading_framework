@@ -12,7 +12,8 @@ Build the point-in-time daily dataset from free sources (Massive, MarketParquet,
   python build_pit_dataset.py candidates           # daily prefilter -> data/pit/candidates.parquet
   python build_pit_dataset.py alpaca-minute        # 1-min bars for candidate symbol-days
   python build_pit_dataset.py build                # merge into data/pit/daily_pit.parquet
-  python build_pit_dataset.py validate             # coverage + cross-source checks, writes report.txt
+  python build_pit_dataset.py validate             # integrity checks (exit 1 on duplicates/bad bars/stale windows), then coverage + cross-source checks, writes report.txt
+  python build_pit_dataset.py check                # integrity checks only (also run after candidates / alpaca-minute / build)
 """
 
 import argparse
@@ -22,11 +23,12 @@ from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(__file__))
 from src.data import pit_dataset as pit
+from src.data.pit_integrity import require_valid_pit_data
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("step", choices=["reference", "massive", "mp", "alpaca-daily", "market", "news", "otc", "edgar", "build", "candidates", "alpaca-minute", "validate"])
+    ap.add_argument("step", choices=["reference", "massive", "mp", "alpaca-daily", "market", "news", "otc", "edgar", "build", "candidates", "alpaca-minute", "validate", "check"])
     ap.add_argument("--days", type=int, default=None, help="limit number of dates fetched (massive)")
     ap.add_argument("--start", default=None, help="start date YYYY-MM-DD (massive); default 2 years back")
     ap.add_argument("--end", default=None, help="end date YYYY-MM-DD (massive); default yesterday")
@@ -66,8 +68,12 @@ def main():
         pit.fetch_alpaca_minute(pd.read_parquet(pit.PIT_DIR / "candidates.parquet"))
     elif a.step == "build":
         pit.build_daily()
-    else:
+    elif a.step == "validate":
         pit.validate()
+    else:
+        require_valid_pit_data()
+    if a.step in ("candidates", "alpaca-minute", "build"):
+        require_valid_pit_data(trades=False, windows=False)
 
 
 if __name__ == "__main__":

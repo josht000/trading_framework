@@ -27,6 +27,8 @@ import pandas as pd
 import requests
 from dotenv import load_dotenv
 
+from src.data.pit_integrity import clean_daily, clean_minute, dedupe_on, drop_daily_aliases  # noqa: F401
+
 load_dotenv()
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,17 +39,18 @@ MIN_INTERVAL = 12.5  # free plan: 5 calls/minute
 
 
 class MassiveClient:
-    def __init__(self, api_key=None):
+    def __init__(self, api_key=None, interval=None):
         self.key = api_key or os.getenv("MASSIVE_API_KEY")
         if not self.key:
             raise ValueError("MASSIVE_API_KEY not set")
         self._last = 0.0
+        self.interval = MIN_INTERVAL if interval is None else float(interval)
 
     def get(self, url, **params):
         if url.startswith("/"):
             url = MASSIVE + url
         for attempt in range(6):
-            wait = MIN_INTERVAL - (time.time() - self._last)
+            wait = self.interval - (time.time() - self._last)
             if wait > 0:
                 time.sleep(wait)
             self._last = time.time()
@@ -180,7 +183,7 @@ def fetch_market(start=DAILY_START, end=None, log=print):
             if len(m):
                 frames.append(m[["timestamp", "open", "high", "low", "close", "volume"]])
             cur = nxt
-        pd.concat(frames, ignore_index=True).to_parquet(out / f"{sym}_minute.parquet", index=False)
+        dedupe_on(pd.concat(frames, ignore_index=True), ["timestamp"]).to_parquet(out / f"{sym}_minute.parquet", index=False)
         log(f"{sym}: {len(d)} daily bars, {sum(len(f) for f in frames)} minute bars")
 
 
@@ -210,7 +213,7 @@ def fetch_news(symbols, start=DAILY_START, end=None, workers=4, log=print):
             (frames.append(df) if df is not None else failed.append(sym))
             if i % 200 == 0:
                 log(f"  news {i}/{len(syms)} symbols")
-    news = pd.concat([f for f in frames if len(f)], ignore_index=True)
+    news = dedupe_on(pd.concat([f for f in frames if len(f)], ignore_index=True), ["symbol", "created_at", "headline"])
     news["created_at"] = pd.to_datetime(news["created_at"], utc=True)
     out = PIT_DIR / "news"
     out.mkdir(parents=True, exist_ok=True)
@@ -305,7 +308,7 @@ def fetch_edgar(symbols, start=DAILY_START, workers=6, log=print):
     with ThreadPoolExecutor(workers) as ex:
         for i, (sym, df) in enumerate(ex.map(one, ciks.items()), 1):
             (frames.append(df) if df is not None else failed.append(sym))
-    filings = pd.concat([f for f in frames if len(f)], ignore_index=True)
+    filings = dedupe_on(pd.concat([f for f in frames if len(f)], ignore_index=True), ["symbol", "accessionNumber"])
     out = PIT_DIR / "edgar"
     out.mkdir(parents=True, exist_ok=True)
     filings.to_parquet(out / "filings.parquet", index=False)
@@ -412,7 +415,7 @@ def daily_candidates(daily, min_price=2.0, max_price=20.0, min_avg_volume=500_00
                 lad = det.ladder(p, k, price=r["prev_close"])
                 if ((lad["upper"] > r["prev_close"]) & (lad["upper"] < r["close"])).any():
                     ok.at[idx] = True
-    return d.loc[ok, ["date", "symbol"]].reset_index(drop=True)
+    return dedupe_on(drop_daily_aliases(d.loc[ok, ["date", "symbol"]], d), ["symbol", "date"]).reset_index(drop=True)  # one security per bar
 
 
 def fetch_alpaca_minute(cands, log=print):
@@ -448,6 +451,7 @@ def fetch_alpaca_minute(cands, log=print):
             df = df[["timestamp", "symbol", "open", "high", "low", "close", "volume", "trade_count", "vwap"]]
         if len(old):
             df = pd.concat([old, df], ignore_index=True)
+        df = clean_minute(df) if len(df) else df
         _atomic_write(df if len(df) else pd.DataFrame(columns=["timestamp", "symbol"]), path)
         if i % 20 == 0 or i == len(dates):
             log(f"  {i}/{len(dates)} dates (last {pd.Timestamp(d).date()}, {len(df)} rows)")
@@ -490,7 +494,7 @@ def build_daily(log=print):
         seen |= set(zip(src["date"], src["symbol"]))
         parts.append(src)
         log(f"{label}: {len(src)} rows used")
-    df = pd.concat(parts, ignore_index=True).sort_values(["symbol", "date"]).reset_index(drop=True)
+    df = clean_daily(pd.concat(parts, ignore_index=True)).sort_values(["symbol", "date"]).reset_index(drop=True)
     ref_path = PIT_DIR / "reference.parquet"
     if ref_path.exists():
         ref = pd.read_parquet(ref_path)
@@ -504,8 +508,10 @@ def build_daily(log=print):
 
 
 def validate(sample=60, log=print):
-    """Coverage, source agreement, delisting coverage, and a yfinance cross-check."""
+    """Integrity checks (exit 1 on errors), then coverage, source agreement, delisting coverage and a yfinance cross-check."""
     import numpy as np
+    from src.data.pit_integrity import require_valid_pit_data
+    require_valid_pit_data(log=log)
     lines = []
     out = lambda s="": (lines.append(s), log(s))
     df = pd.read_parquet(PIT_DIR / "daily_pit.parquet")

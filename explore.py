@@ -20,6 +20,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 from src.backtest.market_regime import attach_regime
 from src.backtest.pit_metrics import dedupe_trades, simulate_account
 
+
+def _mcap_column(t):
+    return t["mcap_final"] if "mcap_final" in t.columns else t["mcap_pit"]
+
 METHOD = "atr_pivot" + (("_" + os.getenv("RESULTS_TAG")) if os.getenv("RESULTS_TAG") else "")
 
 FILTERS = {
@@ -32,6 +36,8 @@ FILTERS = {
     "spy_ret20>0": lambda t: t["spy_ret20"] > 0,
     "iwm_day>=0": lambda t: t["iwm_day"] >= 0,
     "shares<=100M": lambda t: t["shares_pit"].fillna(t["float_now"]) <= 100e6,
+    "shares<30M": lambda t: t["shares_pit"].fillna(t["float_now"]) < 30e6,
+    "mcap<200M": lambda t: _mcap_column(t) < 200e6,
     "headroom>=10%": lambda t: t["headroom"] >= 0.10,
     "headroom>=20%": lambda t: t["headroom"] >= 0.20,
     "headroom>=30%": lambda t: t["headroom"] >= 0.30,

@@ -350,11 +350,8 @@ def run_pit_backtest():
         "data/pit/daily_pit.parquet",
         columns=["date", "symbol", "open", "high", "low", "close", "volume", "delisted_utc"],
     )
-    minute = pd.concat(
-        [pd.read_parquet(f) for f in sorted(glob.glob("data/pit/alpaca_minute/*.parquet"))],
-        ignore_index=True,
-    )
-    minute = minute[minute["symbol"].isin(set(cands["symbol"]))]
+    from src.data.pit_integrity import load_minute
+    minute = load_minute(symbols=set(cands["symbol"]))  # overlapping day files repeat bars
     if str(getattr(minute["timestamp"].dtype, "tz", None)) != "America/New_York":
         minute["timestamp"] = pd.to_datetime(minute["timestamp"], utc=True).dt.tz_convert("America/New_York")
     print(f"candidate symbol-days: {len(cands)}, symbols: {cands['symbol'].nunique()}, "
@@ -445,6 +442,16 @@ def run_pit_backtest():
     summary = pd.DataFrame(rows).set_index("variant")
     with pd.option_context("display.width", 250, "display.max_columns", 30, "display.float_format", "{:.2f}".format):
         print(summary)
+    from src.backtest import kfold as K
+    for name in variants:
+        kt = shown[shown["variant"] == name].drop(columns="variant")
+        if len(kt):
+            kdays = pd.bdate_range(pd.to_datetime(kt["entry_time"].astype(str).str[:10]).min(),
+                                   pd.to_datetime(kt["entry_time"].astype(str).str[:10]).max())
+            krows, ksummary = K.kfold_stability(kt, kdays, rank="rel_vol", pool=kt, label=f"{name}|{which}")
+            print(f"k=5 {name} ({which}): profitable={ksummary['folds_profit']}, "
+                  f"beats_random={ksummary['folds_beat_random']}, t={ksummary['fold_t']:.2f}, "
+                  f"best_fold_share={ksummary['best_fold_share']:.2f}, p={ksummary['kfold_p']:.3f}")
     summary.to_csv(os.path.join("results", f"pit_summary_{PREFIX}_{which}.csv"))
     r = cfg["realism"]
     print(f"portfolio: top {MAX_POS}/day by relative volume, equal weight, fully invested, compounding")

@@ -246,7 +246,8 @@ A fixed ticker list is survivor-biased, so PIT mode screens every symbol that wa
 | news | `... news` | `news/news.parquet`: Alpaca (Benzinga) articles per candidate symbol (`symbol, created_at (UTC), headline, summary, source`). About 46% are generic mover lists / calendars, so company-specific filtering is done by headline keywords (see `explore.py`). No historical social sentiment is available from free sources |
 | prefilter | `... candidates` | `candidates.parquet` (`date, symbol`): daily-only screen (price $2-$20, 20d avg volume >= 500k, volume >= 2x average, close and open above prior close, rolling-20 high **or** `atr_pivot` breakout) |
 | minute bars | `... alpaca-minute` | `alpaca_minute/DATE.parquet`: 1-minute SIP bars (incl. extended hours) for the candidate symbols of that date, signal session plus next session. `timestamp` is America/New_York |
-| checks | `... validate` | `report.txt`: coverage, cross-source agreement, known delistings, yfinance cross-check |
+| checks | `... validate` | integrity checks first (exits 1 on failure), then `report.txt`: coverage, cross-source agreement, known delistings, yfinance cross-check |
+| integrity | `... check` | `src/data/pit_integrity.py` (`validate_pit_data()` returns a report dict; also run after `candidates` / `alpaca-minute` / `build`, and at the start of `scripts/exit_rerun_v2.py` and `scripts/exit_campaign.py`): no duplicate (symbol, timestamp) / (symbol, date), no ticker-change twins among candidates, monotonic in-session timestamps, sane prices, and window cache vs trade table consistency. Day files overlap by design (signal day + next session), so loaders use `load_minute` / drop duplicate timestamps. `scripts/repair_pit_data.py` cleans existing files (backs up to `data/pit/_backup_dedupe_<ts>/`), `scripts/build_exit_windows.py` rebuilds the exit window cache |
 
 Notes and caveats:
 
@@ -256,6 +257,41 @@ Notes and caveats:
 - Not covered: news history for delisted names (Alpaca news is nearly empty for them), delisting returns, historical float and borrow data.
 
 ## Running the PIT backtest (`main.py`)
+
+### Exit simulator campaign
+
+`src/backtest/exit_sim.py` compares causal next-session exits on cached
+15:55-to-11:00 minute windows without re-running entries.  The resumable
+campaign runner is `scripts/exit_campaign.py`; it reports both legacy
+trigger-close fills and realistic next-bar-open fills, and keeps the locked
+test period out of parameter search.  The recommended experimental variant is
+`smart_exit_v1` in `src/backtest/exit_variants.py`; it is intentionally not
+the default selected by `main.py`.
+
+### Five-fold partition stability
+
+`src/backtest/kfold.py` provides a chronological, non-shuffled `k=5` stability
+view for each dev and locked-test configuration.  It reports profitable and
+random-beating folds, fold-return t-statistics, best-fold concentration, and
+an exact Poisson-binomial luck tail from 2,000 same-pool random-pick draws per
+fold.  `scripts/partition_report.py` writes the fold CSV/Markdown inputs and
+figures under `reports/partition/`; `rank_final.py --summary` adds the compact
+fold columns to its summary tables.  Five folds have low statistical power,
+and dev folds for tuned configurations are not independent evidence.
+Partition reports keep separate random-pick baselines from the pre-filter
+universe and the strategy-filtered pre-ranking pool, and count days without a
+real choice. Skill is a residual after trend and training-bias estimates, so
+its meaning depends on the selected random baseline. Bias-B is one pooled
+comparable-trial expected-maximum estimate with an effective trial count and
+is flagged when it exceeds the observed total.
+
+Hindsight oracle: `scripts/build_exit_oracle.py` writes `results/exit/oracle.parquet`
+(one row per window `trade_id`; every non-id column is prefixed `hindsight_`, so it must
+never be joined into entry features or rankings) and `oracle_meta.json` (sha256 of
+`windows.npz` / `windows_index.parquet`, params, git commit).  It is derived from the
+window cache and kept out of `data/pit`.  `build_exit_oracle.py --check` exits 1 if the
+table is stale vs the current cache, and `validate_pit_data()` reports the same as a
+WARNING.  Dev-only analysis: `scripts/analyze_exit_oracle.py` (tables `reports/exit/tables/oracle_*.csv`).
 
 `python main.py` uses `data/pit` automatically (`BACKTEST_MODE=symbols` forces the old symbol-list mode). Relevant environment variables:
 

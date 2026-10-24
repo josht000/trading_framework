@@ -27,6 +27,13 @@ from src.strategies.humbled_bullish_overnight import HumbledBullishOvernight
 
 CACHE_DIR = os.path.join("data", "pit", "ladder_cache")
 T_OPEN, T_CLOSE = pd.Timestamp("09:30").time(), pd.Timestamp("16:00").time()
+PM_DEFAULT_START = pd.Timestamp("08:00").time()
+
+
+def _pm_start(spec):
+    """Earliest next-day pre-market time eligible for this exit specification."""
+    value = spec.get("pm_start", "08:00")
+    return pd.Timestamp(value).time() if isinstance(value, str) else value
 
 
 def cache_path(lookback_bars=None):
@@ -206,7 +213,7 @@ def _path(sig, tm, ts, ep, day, later):
         out["ah45_min"], out["ah45_last"] = float(ah["close"].min() / ep - 1), float(ah["close"].iloc[-1] / ep - 1)
     if len(later):
         nd = later[0].date()
-        pm = sig[(sig.index.date == nd) & (tm < T_OPEN)]
+        pm = sig[(sig.index.date == nd) & (tm >= PM_DEFAULT_START) & (tm < T_OPEN)]
         if len(pm):
             out["pm_last"] = float(pm["close"].iloc[-1] / ep - 1)
         out["open_ret"] = float(sig.at[later[0], "close"] / ep - 1)
@@ -266,9 +273,24 @@ def build_trades(s, sig, daily_df, cfg, news=None):
                     h = chg[below | above]
                     if len(h):
                         hit = (h.index[0], "ah_stop" if below.loc[h.index[0]] else "ah_target")
+            if hit is None and len(later) and v.get("smart"):
+                nd = later[0].date()
+                deadline = pd.Timestamp(v.get("deadline", "10:15")).time()
+                opening = sig[(sig.index.date == nd) & (tm >= T_OPEN) & (tm <= deadline)]
+                if len(opening):
+                    chg = opening["close"] / pe - 1
+                    peak = chg.cummax()
+                    trail = float(v.get("trail", 0.06))
+                    activate = float(v.get("activate", 0.05))
+                    stop = (peak >= activate) & ((chg - peak) <= -trail)
+                    h = chg[stop]
+                    if len(h):
+                        hit = (h.index[0], "smart_trail")
+                    else:
+                        hit = (opening.index[-1], "smart_deadline")
             if hit is None and len(later) and (v.get("pm_target") or v.get("pm_stop")):
                 nd = later[0].date()
-                pm = sig[(sig.index.date == nd) & (tm < T_OPEN)]
+                pm = sig[(sig.index.date == nd) & (tm >= _pm_start(v)) & (tm < T_OPEN)]
                 if len(pm):
                     chg = pm["close"] / pe - 1
                     up = (chg >= v["pm_target"]) if v.get("pm_target") else pd.Series(False, index=chg.index)

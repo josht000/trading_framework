@@ -1,2 +1,5 @@
 - Always add scripts to the scripts folder
 - Envs should always be repeatble so the requirements.txt and other install/setup scripts need to be kept up to date. Notify the user (me) if updates are needed here. 
+- Windows python env is in C:\data\envs\trading_framework\Scripts\python.exe
+- DO NOT EVER USE THE SCHWAB API TO MAKE REAL TRADES! IT IS FOR DATA ONLY!
+- Every simulation report must include the partition test (trend, random-pick baseline, skill, bias, skill %) for dev and test.

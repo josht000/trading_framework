@@ -10,6 +10,7 @@ Spec keys (all optional except rules):
   confirm      consecutive 1-min closes beyond the stop needed to trigger it (default 1)
   pm_target    if no after-hours exit, take profit at the first next-day pre-market bar this far above entry
   pm_stop      if no after-hours exit, stop at the first next-day pre-market bar this far below entry
+  pm_start     earliest next-day pre-market bar eligible for a trigger/fill (default 08:00)
 Triggers use bar closes; fills follow the volume-limited, slippage-adjusted model in pit_runner.
 """
 
@@ -20,7 +21,7 @@ VARIANTS = {
     "w30_tgt20": dict(window_min=30, stop=0.12, target=0.20),
     "w30_20_20": dict(window_min=30, stop=0.20, target=0.20),
     "ah_full": dict(window_min=240, stop=0.12, target=0.50),
-    "pm_target25_v2": dict(window_min=45, stop=0.12, target=0.50, pm_target=0.25),
+    "pm_target25_v2": dict(window_min=45, stop=0.12, target=0.50, pm_target=0.25, pm_start="08:00"),
     "atr_stop": dict(window_min=45, atr_k=0.6, atr_min=0.08, atr_max=0.25, target=0.50),
     "confirm2": dict(window_min=45, stop=0.12, target=0.50, confirm=2),
     # round-2 exit knobs, off v2 and pm_target25_v2
@@ -28,10 +29,12 @@ VARIANTS = {
     "v2_pmstop25": dict(window_min=45, stop=0.12, target=0.50, pm_stop=0.25),
     "v2_stop15": dict(window_min=45, stop=0.15, target=0.50),
     "v2_stop10": dict(window_min=45, stop=0.10, target=0.50),
-    "pm25_pmstop15": dict(window_min=45, stop=0.12, target=0.50, pm_target=0.25, pm_stop=0.15),
-    "pm25_pmstop25": dict(window_min=45, stop=0.12, target=0.50, pm_target=0.25, pm_stop=0.25),
-    "pm25_stop15": dict(window_min=45, stop=0.15, target=0.50, pm_target=0.25),
-    "pm25_stop10": dict(window_min=45, stop=0.10, target=0.50, pm_target=0.25),
-    "pm15_v2": dict(window_min=45, stop=0.12, target=0.50, pm_target=0.15),
-    "pm35_v2": dict(window_min=45, stop=0.12, target=0.50, pm_target=0.35),
+    "pm25_pmstop15": dict(window_min=45, stop=0.12, target=0.50, pm_target=0.25, pm_stop=0.15, pm_start="08:00"),
+    "pm25_pmstop25": dict(window_min=45, stop=0.12, target=0.50, pm_target=0.25, pm_stop=0.25, pm_start="08:00"),
+    "pm25_stop15": dict(window_min=45, stop=0.15, target=0.50, pm_target=0.25, pm_start="08:00"),
+    "pm25_stop10": dict(window_min=45, stop=0.10, target=0.50, pm_target=0.25, pm_start="08:00"),
+    "pm15_v2": dict(window_min=45, stop=0.12, target=0.50, pm_target=0.15, pm_start="08:00"),
+    "pm35_v2": dict(window_min=45, stop=0.12, target=0.50, pm_target=0.35, pm_start="08:00"),
+    "smart_exit_v1": dict(window_min=45, stop=0.12, target=0.50, pm_start="08:00",
+                          smart=True, deadline="10:15", trail=0.06, activate=0.05),
 }

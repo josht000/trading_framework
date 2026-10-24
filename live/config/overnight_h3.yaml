@@ -1,0 +1,32 @@
+name: overnight_h3
+hygiene_level: 1
+filters:
+  headroom_min: 0.20
+  above_sma200: true
+score:
+  threshold: 2.0
+  weights:
+    headroom: 0.5
+    float: 0.0
+    trend200: 1.0
+    market: 1.0
+    news: 0.0
+    movers: 0.5
+    edgar_pos: 0.0
+    delist_notice: 3.0
+    late_filing: 1.5
+    dilution: 0.0
+    theme: 1.5
+sizing:
+  sleeve_start: 5000.0
+  max_positions: 5
+  position_frac: 0.20
+  participation: 0.10
+  min_fill: 0.25
+entry:
+  time: "15:55"
+exits:
+  ah_window_min: 45
+  ah_stop: 0.12
+  ah_target: 0.50
+  pm_target: 0.25

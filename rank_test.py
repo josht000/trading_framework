@@ -24,6 +24,7 @@ from explore import FILTERS
 from src.backtest import features_extra as fx
 from src.backtest import ranking as rk
 from src.backtest.pit_metrics import select_trades, simulate_account
+from src.data.market_cap import merge_market_cap
 
 OUT = os.path.join("reports", "ranking")
 TABLE = os.path.join("reports", "ranked_table.parquet")
@@ -32,17 +33,22 @@ RNG = np.random.default_rng(11)
 STRATS = {  # existing top strategies: entry filters on the base pm_target25_v2 trades
     "base": ["all"],
     "S1": ["above_sma200", "iwm_day>=0", "spy_day>=0"],
+    "H1": ["headroom>=20%"],
     "H3": ["headroom>=20%", "above_sma200"],
     "H2": ["headroom>=20%", "above_sma200", "iwm_day>=0", "spy_day>=0"],
     "base<=100M": ["shares<=100M"],
     "S1<=100M": ["above_sma200", "iwm_day>=0", "spy_day>=0", "shares<=100M"],
     "H3<=100M": ["headroom>=20%", "above_sma200", "shares<=100M"],
+    "F30-H20": ["shares<30M", "headroom>=20%"],
+    "F30-M200-H20": ["shares<30M", "mcap<200M", "headroom>=20%"],
+    "M200": ["mcap<200M"],
+    "M200-H20": ["mcap<200M", "headroom>=20%"],
 }
 
 
 def build_table(rebuild=False):
     if os.path.exists(TABLE) and not rebuild:
-        return pd.read_parquet(TABLE)
+        return merge_market_cap(pd.read_parquet(TABLE))
     T = prepare()
     cand = pd.read_parquet(os.path.join("data", "pit", "candidates.parquet"))
     T = fx.add_edgar(T)
@@ -51,7 +57,7 @@ def build_table(rebuild=False):
     T = fx.add_theme_heat(T, cand)
     T = fx.add_otc(T)
     T.to_parquet(TABLE, index=False)
-    return T
+    return merge_market_cap(T)
 
 
 def hygiene(T, level):
@@ -175,9 +181,8 @@ def dev_experiments(T, md):
     return res
 
 
-def tune_weights(T, md, n_iter=700):
-    dev = T[(T["period"] == "dev")]
-    dev = dev[hygiene(dev, 1)]
+def weight_search(dev, n_iter, rng):
+    """Random search of score weights x threshold on `dev` (train = first 60% of its days, validation = rest). Returns the draws table."""
     days = pd.bdate_range(dev["day"].min(), dev["day"].max())
     d_tr, d_va = day_split(days)
     tr, va = dev[dev["day"].isin(d_tr)], dev[dev["day"].isin(d_va)]
@@ -188,8 +193,8 @@ def tune_weights(T, md, n_iter=700):
     comp_tr, comp_va = rk.components(tr), rk.components(va)
     rows = []
     for i in range(n_iter):
-        w = {k: float(RNG.choice(v)) for k, v in grid.items()}
-        th = float(RNG.choice(ths))
+        w = {k: float(rng.choice(v)) for k, v in grid.items()}
+        th = float(rng.choice(ths))
         s_tr = sum(w[k] * comp_tr[k] for k in rk.COMPONENTS)
         sel = tr[s_tr >= th].assign(rank_key=s_tr[s_tr >= th])
         if len(sel) < 150:
@@ -201,8 +206,48 @@ def tune_weights(T, md, n_iter=700):
         rows.append({"weights": json.dumps(w), "threshold": th, "train_trades": a["trades"], "train_sharpe": a["sharpe"], "train_total%": a["total%"],
                      "train_maxDD%": a["maxDD%"], "val_trades": b["trades"] if b else 0, "val_sharpe": b["sharpe"] if b else np.nan,
                      "val_total%": b["total%"] if b else np.nan, "val_maxDD%": b["maxDD%"] if b else np.nan, "val_min$": b["min$"] if b else np.nan})
-    df = pd.DataFrame(rows)
+    return pd.DataFrame(rows)
+
+
+def pick_weights(df):
+    """Selection rule: best validation Sharpe among the top 15 draws by train Sharpe."""
+    cand = df.sort_values("train_sharpe", ascending=False).head(15).sort_values("val_sharpe", ascending=False).iloc[0]
+    return json.loads(cand["weights"]), float(cand["threshold"])
+
+
+def nested_weight_bias(dev, filt=None, n_iter=700, cache=None):
+    """Walk-forward bias (partition.walk_forward_bias) of the weight-tuning procedure; filt(x) optionally restricts the evaluated strategy (e.g. H3)."""
+    from src.backtest.partition import walk_forward_bias
+    cache = {} if cache is None else cache
+
+    def tune(tr):
+        key = (len(tr), str(tr["day"].max()))
+        if key not in cache:
+            df = weight_search(tr, n_iter, np.random.default_rng(5000 + len(tr)))
+            cache[key] = pick_weights(df) if len(df) and df["val_sharpe"].notna().any() else None
+        return cache[key]
+
+    def ev(x, params, days):
+        w, th = params
+        sel = with_score(x, w)
+        sel = sel[sel["score"] >= th]
+        sel = filt(sel) if filt is not None else sel
+        if len(sel) == 0:
+            return 0.0
+        return float(np.log1p(simulate_account(sel, max_pos=5, rank="rank_key", all_days=days)[2]).sum())
+
+    return walk_forward_bias(dev, tune, ev, folds=5, embargo_days=2, n_days_period=len(pd.bdate_range(dev["day"].min(), dev["day"].max())))
+
+
+def tune_weights(T, md, n_iter=700):
+    dev = T[(T["period"] == "dev")]
+    dev = dev[hygiene(dev, 1)]
+    days = pd.bdate_range(dev["day"].min(), dev["day"].max())
+    df = weight_search(dev, n_iter, RNG)
     df.to_csv(os.path.join(OUT, "weight_search.csv"), index=False)
+    from src.backtest.partition import log_trials
+    log_trials("ranking", n_iter, np.log1p(df["train_total%"] / 100), days=int(0.6 * len(days)), source="rank_test.tune_weights",
+               notes=f"weight x threshold random search, {len(df)} valid draws; per-trial = train-segment total log return")
     top = df.sort_values("train_sharpe", ascending=False).head(15)
     corr = df[["train_sharpe", "val_sharpe"]].dropna().corr(method="spearman").iloc[0, 1]
     md.append(f"### Weight tuning (random search, {len(df)} valid draws of weights x threshold; train = first 60% of dev days, validation = last 40%)\n\n"
@@ -215,6 +260,9 @@ def tune_weights(T, md, n_iter=700):
               open(os.path.join("results", "ranking_weights.json"), "w"), indent=1)
     md.append(f"Selected (best validation Sharpe among the top 15 by train): weights {best_w}, threshold {best_th:g}; "
               f"validation Sharpe {cand['val_sharpe']:.2f}, total {cand['val_total%']:.0f}%, max DD {cand['val_maxDD%']:.0f}%, {int(cand['val_trades'])} trades.\n")
+    nb = nested_weight_bias(dev, None, n_iter)
+    md.append(f"Walk-forward (nested) bias of this tuning procedure: {100 * nb['bias']:+.1f} log-return points over {len(days)} dev days "
+              f"({nb['folds']} folds; in-sample {100 * nb['is_per_day']:.3f}%/day vs out-of-sample {100 * nb['oos_per_day']:.3f}%/day).\n")
     return best_w, best_th, corr
 
 

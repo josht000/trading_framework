@@ -3,14 +3,7 @@
 import numpy as np
 import pandas as pd
 
-
-def dedupe_trades(t):
-    """
-    Drop duplicate securities: a ticker change leaves the same company's bars under the old and
-    new symbol, so the same trade appears twice (identical day, prior close, 15:55 price).
-    """
-    day = t["entry_time"].astype(str).str[:10]
-    return t.loc[~pd.DataFrame({"d": day, "p": t["prev_close"].round(4), "e": t["price"].round(4)}).duplicated()]
+from src.data.pit_integrity import dedupe_trades  # noqa: F401  (re-exported)
 
 
 def daily_returns(t, max_pos=5, rank="rel_vol", sizing="full", all_days=None):
