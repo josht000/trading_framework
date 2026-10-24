@@ -16,6 +16,7 @@ import pandas as pd
 
 from src.backtest.pit_runner import PM_DEFAULT_START, T_CLOSE, T_OPEN
 from src.data.pit_integrity import dedupe_trades
+from src.utils import timing
 
 
 COMMISSION = 0.001
@@ -140,6 +141,7 @@ def save_windows(windows, path):
     )
 
 
+@timing.timed("load_windows")
 def load_windows(path):
     """Load a cache written by :func:`save_windows`."""
     z = np.load(path, allow_pickle=True)
@@ -345,6 +347,7 @@ def model_features(w, i, peak_from="open"):
     ], dtype=float)
 
 
+@timing.timed("_events")
 def _events(w, policy):
     """Return [(decision_idx, fraction_of_original_position, reason), ...] using causal info only."""
     name = policy.get("name", "smart")
@@ -441,6 +444,7 @@ def _events(w, policy):
     return rest("deadline", decisions[-1])
 
 
+@timing.timed("_fill")
 def _fill(w, start, end, shares, model, used=None):
     """Sequential fill from bar `start` through `end`; returns (avg price, filled shares, last idx, first idx).
 
@@ -515,6 +519,7 @@ def simulate_trade(w, policy=None, fill_model="realistic"):
     }
 
 
+@timing.timed("simulate")
 def simulate(windows, policy=None, fill_model="realistic"):
     return pd.DataFrame([simulate_trade(w, policy, fill_model) for w in windows])
 

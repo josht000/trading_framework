@@ -37,7 +37,7 @@ Base strategy (13-month `atr_pivot` breakout at 15:55, `pm_target25_v2` exits, n
 
 # Winning-trade analysis: base strategy (13-month atr_pivot, pm_target25_v2 exits)
 
-Generated from 2584 de-duplicated trades, 2024-10-18 to 2026-10-13 (2328 dev, 256 test), 1074 symbols, 1037 winners (40.1%), 157 big winners (>= +10%), 75 monsters (>= +25%). Returns are per trade after 0.1%/side commission and slippage (0.15% regular / 0.4% extended hours); entry = 15:55 ET, exit rules as in README.
+Generated from 2584 de-duplicated trades, 2024-10-18 to 2026-10-13 (2273 dev, 311 test), 1074 symbols, 1037 winners (40.1%), 157 big winners (>= +10%), 75 monsters (>= +25%). Returns are per trade after 0.1%/side commission and slippage (0.15% regular / 0.4% extended hours); entry = 15:55 ET, exit rules as in README.
 
 ## 1. How concentrated is the profit?
 
@@ -67,7 +67,7 @@ Top 20 trades:
 | 2025-06-05 | EYEN | 72.7 | Healthcare | Biotechnology | 52.6 | 4.8 | 2.1 | pm_target | dev |
 | 2026-02-27 | INDO | 61.5 | Energy | Oil & Gas E&P | 21.8 | 9.1 | 2.4 | pm_target | dev |
 | 2026-03-02 | BATL | 59.5 | Energy | Oil & Gas - E&P | 116.1 | 93.8 | 6.3 | pm_target | dev |
-| 2026-07-09 | JLHL | 56.9 | Industrials | Building Products & Equipment | 325.5 | 21.9 | 126.3 | ah_target | dev |
+| 2026-07-09 | JLHL | 56.9 | Industrials | Building Products & Equipment | 325.5 | 21.9 | 126.3 | ah_target | test |
 | 2024-11-07 | LICY | 50.6 | Industrials | Waste Management | 13.5 | 2.5 | 2.1 | pm_target | dev |
 | 2026-01-12 | AZIO | 49.4 | Technology | Software - Infrastructure | 392.3 | 148.3 | 20.9 | ah_target | dev |
 | 2025-10-27 | GPUS | 47.7 | Industrials | Conglomerates | 19.2 | 7.5 | 2.7 | pm_target | dev |
@@ -283,54 +283,54 @@ Each company's business description was converted to TF-IDF features and factori
 
 | topic_label | n | win% | big% | mean% | median% | PF | sum_ret | share_of_total_profit% |
 |---|---|---|---|---|---|---|---|---|
-| T12: ai, data, intelligence, artificial intelligence, artificial | 237 | 45.15 | 9.70 | 1.13 | -0.43 | 1.47 | 2.68 | 53.43 |
-| T13: quantum, quantum computing, computing, technologies, software | 45 | 62.22 | 22.22 | 4.97 | 1.67 | 3.78 | 2.24 | 44.59 |
-| T6: gas, oil, natural gas, natural, production | 140 | 39.29 | 6.43 | 1.40 | -0.40 | 1.67 | 1.96 | 39.15 |
-| T1: clinical, treatment, phase, therapeutics, trial | 453 | 45.47 | 4.64 | 0.24 | -0.28 | 1.13 | 1.08 | 21.57 |
-| T0: solutions, digital, media, platform, service | 141 | 45.39 | 5.67 | 0.33 | -0.30 | 1.18 | 0.47 | 9.32 |
-| T5: brands, cannabis, stores, accessories, sells | 196 | 33.16 | 5.10 | 0.09 | -0.79 | 1.06 | 0.18 | 3.57 |
-| T3: real estate, estate, real, trust, investment | 61 | 31.15 | 8.20 | 0.22 | -0.88 | 1.10 | 0.14 | 2.70 |
-| T9: loans, investments, million, debt, credit | 88 | 34.09 | 2.27 | -0.06 | -0.57 | 0.95 | -0.05 | -1.04 |
-| T2: gold, located, canada, exploration, corp | 133 | 42.86 | 2.26 | -0.12 | -0.59 | 0.93 | -0.15 | -3.07 |
-| T8: energy, solar, power, storage, energy storage | 126 | 39.68 | 7.14 | -0.15 | -1.21 | 0.95 | -0.19 | -3.77 |
-| T4: systems, equipment, automotive, industrial, applications | 364 | 40.11 | 5.49 | -0.07 | -0.69 | 0.97 | -0.24 | -4.77 |
-| T11: limited, china, people republic, republic china, republic | 105 | 40.95 | 6.67 | -0.74 | -0.60 | 0.76 | -0.77 | -15.41 |
-| T7: new york, york, new, york new, headquartered new | 127 | 34.65 | 8.66 | -0.74 | -1.33 | 0.76 | -0.94 | -18.77 |
-| T10: health, care, medical, home, healthcare | 150 | 36.67 | 5.33 | -0.92 | -0.77 | 0.62 | -1.38 | -27.51 |
+| T12: ai, data, cloud, software, solutions | 410 | 46.10 | 9.76 | 1.14 | -0.29 | 1.49 | 4.67 | 93.04 |
+| T3: oil, gas, natural gas, natural, crude | 84 | 35.71 | 7.14 | 1.94 | -0.47 | 2.06 | 1.63 | 32.54 |
+| T1: treatment, clinical, phase, therapeutics, trial | 477 | 45.07 | 4.61 | 0.16 | -0.29 | 1.08 | 0.75 | 14.93 |
+| T4: gold, silver, located, canada, exploration | 140 | 43.57 | 4.29 | 0.51 | -0.50 | 1.26 | 0.71 | 14.10 |
+| T0: media, content, digital, advertising, video | 65 | 46.15 | 7.69 | 0.72 | -0.29 | 1.44 | 0.47 | 9.29 |
+| T2: loans, banking, insurance, credit, financial | 52 | 38.46 | 3.85 | 0.34 | -0.69 | 1.26 | 0.18 | 3.57 |
+| T7: real estate, estate, real, trust, investment | 64 | 29.69 | 7.81 | 0.22 | -0.85 | 1.11 | 0.14 | 2.79 |
+| T11: million, investments, debt, companies, fund | 34 | 32.35 | 0.00 | -0.18 | -0.53 | 0.87 | -0.06 | -1.23 |
+| T13: systems, solutions, equipment, segment, industrial | 401 | 40.65 | 4.99 | -0.05 | -0.64 | 0.98 | -0.18 | -3.62 |
+| T6: new york, york, new, york new, share | 94 | 32.98 | 11.70 | -0.37 | -1.53 | 0.88 | -0.35 | -6.91 |
+| T9: energy, power, solar, storage, energy storage | 165 | 41.21 | 5.45 | -0.26 | -1.06 | 0.90 | -0.44 | -8.69 |
+| T5: stores, accessories, brands, apparel, retail | 166 | 30.72 | 4.22 | -0.30 | -0.88 | 0.83 | -0.50 | -9.96 |
+| T10: health, care, medical, healthcare, insurance | 118 | 38.98 | 5.93 | -0.72 | -0.69 | 0.70 | -0.85 | -16.90 |
+| T8: limited, china, people republic, republic china, republic | 96 | 36.46 | 6.25 | -1.20 | -1.05 | 0.64 | -1.15 | -22.96 |
 
 Topic enrichment among big winners (Fisher, BH-adjusted):
 
 | topic | n | big_rate% | odds_ratio | p | q_BH |
 |---|---|---|---|---|---|
-| T13: quantum, quantum computing, computing, technologies, software | 45 | 22.222 | 4.590 | 0.000 | 0.004 |
-| T12: ai, data, intelligence, artificial intelligence, artificial | 237 | 9.705 | 1.753 | 0.022 | 0.156 |
-| T2: gold, located, canada, exploration, corp | 133 | 2.256 | 0.337 | 0.061 | 0.284 |
-| T1: clinical, treatment, phase, therapeutics, trial | 453 | 4.636 | 0.695 | 0.157 | 0.479 |
-| T9: loans, investments, million, debt, credit | 88 | 2.273 | 0.345 | 0.171 | 0.479 |
-| T7: new york, york, new, york new, headquartered new | 127 | 8.661 | 1.478 | 0.251 | 0.586 |
-| T3: real estate, estate, real, trust, investment | 61 | 8.197 | 1.370 | 0.423 | 0.846 |
-| T8: energy, solar, power, storage, energy storage | 126 | 7.143 | 1.181 | 0.570 | 0.898 |
-| T4: systems, equipment, automotive, industrial, applications | 364 | 5.495 | 0.866 | 0.636 | 0.898 |
-| T5: brands, cannabis, stores, accessories, sells | 196 | 5.102 | 0.804 | 0.642 | 0.898 |
-| T11: limited, china, people republic, republic china, republic | 105 | 6.667 | 1.090 | 0.834 | 0.926 |
-| T6: gas, oil, natural gas, natural, production | 140 | 6.429 | 1.048 | 0.856 | 0.926 |
-| T10: health, care, medical, home, healthcare | 150 | 5.333 | 0.848 | 0.860 | 0.926 |
-| T0: solutions, digital, media, platform, service | 141 | 5.674 | 0.910 | 1.000 | 1.000 |
+| T12: ai, data, cloud, software, solutions | 410 | 9.756 | 1.887 | 0.002 | 0.021 |
+| T6: new york, york, new, york new, share | 94 | 11.702 | 2.098 | 0.044 | 0.308 |
+| T1: treatment, clinical, phase, therapeutics, trial | 477 | 4.612 | 0.688 | 0.135 | 0.632 |
+| T11: million, investments, debt, companies, fund | 34 | 0.000 | 0.000 | 0.267 | 0.860 |
+| T13: systems, solutions, equipment, segment, industrial | 401 | 4.988 | 0.766 | 0.307 | 0.860 |
+| T5: stores, accessories, brands, apparel, retail | 166 | 4.217 | 0.653 | 0.400 | 0.901 |
+| T4: gold, silver, located, canada, exploration | 140 | 4.286 | 0.667 | 0.467 | 0.901 |
+| T7: real estate, estate, real, trust, investment | 64 | 7.812 | 1.299 | 0.593 | 0.901 |
+| T0: media, content, digital, advertising, video | 65 | 7.692 | 1.277 | 0.596 | 0.901 |
+| T3: oil, gas, natural gas, natural, crude | 84 | 7.143 | 1.177 | 0.644 | 0.901 |
+| T2: loans, banking, insurance, credit, financial | 52 | 3.846 | 0.603 | 0.769 | 0.978 |
+| T9: energy, power, solar, storage, energy storage | 165 | 5.455 | 0.869 | 0.867 | 1.000 |
+| T10: health, care, medical, healthcare, insurance | 118 | 5.932 | 0.957 | 1.000 | 1.000 |
+| T8: limited, china, people republic, republic china, republic | 96 | 6.250 | 1.014 | 1.000 | 1.000 |
 
 Strongest theme waves (weeks with the most big winners sharing a topic):
 
 | week | topic_label | n | tickers |
 |---|---|---|---|
-| 2024-12-21 | T12: ai, data, intelligence, artificial intelligence, artificial | 4 | INTZ, PDYN, RZLV, RR |
-| 2025-03-08 | T13: quantum, quantum computing, computing, technologies, software | 3 | QUBT, QMCO, QBTS |
-| 2026-05-23 | T4: systems, equipment, automotive, industrial, applications | 3 | MNTS, SPCE, CPSH |
-| 2026-02-28 | T6: gas, oil, natural gas, natural, production | 3 | BATL, TPET, TMDE |
-| 2025-10-04 | T1: clinical, treatment, phase, therapeutics, trial | 3 | BMEA, RVPH, TNYA |
-| 2025-02-08 | T7: new york, york, new, york new, headquartered new | 2 | AIFF, AIFF |
-| 2025-07-19 | T4: systems, equipment, automotive, industrial, applications | 2 | LIDR, UAVS |
-| 2025-06-21 | T4: systems, equipment, automotive, industrial, applications | 2 | SRFM, SRFM |
-| 2024-11-23 | T4: systems, equipment, automotive, industrial, applications | 2 | OPTT, VUZI |
-| 2025-07-12 | T1: clinical, treatment, phase, therapeutics, trial | 2 | IXHL, IXHL |
+| 2024-12-21 | T12: ai, data, cloud, software, solutions | 5 | INTZ, LAES, PDYN, RZLV, RR |
+| 2024-12-14 | T12: ai, data, cloud, software, solutions | 4 | SIDU, RZLV, QUBT, QBTS |
+| 2026-05-23 | T13: systems, solutions, equipment, segment, industrial | 4 | MNTS, SPCE, CPSH, CRSR |
+| 2025-03-08 | T12: ai, data, cloud, software, solutions | 3 | QUBT, QMCO, QBTS |
+| 2025-10-04 | T1: treatment, clinical, phase, therapeutics, trial | 3 | BMEA, RVPH, TNYA |
+| 2024-12-28 | T12: ai, data, cloud, software, solutions | 2 | RR, CRNC |
+| 2025-07-19 | T13: systems, solutions, equipment, segment, industrial | 2 | LIDR, UAVS |
+| 2025-07-12 | T1: treatment, clinical, phase, therapeutics, trial | 2 | IXHL, IXHL |
+| 2024-11-23 | T13: systems, solutions, equipment, segment, industrial | 2 | OPTT, VUZI |
+| 2025-02-08 | T6: new york, york, new, york new, share | 2 | AIFF, AIFF |
 
 ![04b_topic_heatmap](figures/04b_topic_heatmap.png)
 
@@ -501,7 +501,7 @@ Trade outcomes by tercile of market variable:
 | IWM 20-day trend | mid | 864 | 41.78 | 6.25 | 0.37 | -0.54 | 1.16 | 3.22 | 93.14 |
 | IWM 20-day trend | high | 857 | 40.14 | 5.48 | -0.20 | -0.64 | 0.91 | -1.73 | -49.97 |
 
-**Breadth ('hype') indicator.** The number of candidate breakouts that day relative to its prior 20-day average: Spearman vs that day's mean trade return +0.071 (p = 0.124); vs number of big winners +0.204.
+**Breadth ('hype') indicator.** The number of candidate breakouts that day relative to its prior 20-day average: Spearman vs that day's mean trade return +0.079 (p = 0.087); vs number of big winners +0.206.
 
 ![06_market](figures/06_market.png)
 
@@ -521,30 +521,30 @@ HistGradientBoosting (depth 3, strong regularization) on 32 point-in-time featur
 
 | target | dev_oos_AUC | dev_oos_PR_AUC | base_rate% | dev_oos_top10%_lift | test_AUC | test_PR_AUC | test_base_rate% | test_top20%_lift | n_dev_oos | n_test |
 |---|---|---|---|---|---|---|---|---|---|---|
-| big | 0.775 | 0.190 | 5.298 | 4.642 | 0.778 | 0.343 | 5.859 | 3.346 | 1831 | 256 |
-| winner | 0.497 | 0.397 | 40.087 | 1.009 | 0.517 | 0.388 | 38.281 | 0.820 | 1831 | 256 |
+| big | 0.773 | 0.191 | 5.349 | 4.542 | 0.803 | 0.357 | 5.466 | 3.541 | 1776 | 311 |
+| winner | 0.492 | 0.392 | 39.977 | 0.975 | 0.570 | 0.451 | 39.228 | 1.151 | 1776 | 311 |
 
 Permutation importance (drop in AUC when a feature is shuffled inside each walk-forward test fold; big-winner target):
 
 | index | mean_AUC_drop | sd_across_folds | folds_positive% |
 |---|---|---|---|
-| dist_ema9 | 0.0142 | 0.0307 | 75.0000 |
-| atr_pct | 0.0135 | 0.0515 | 68.7500 |
-| day_dvol | 0.0122 | 0.0275 | 68.7500 |
-| shares_pit | 0.0110 | 0.0557 | 56.2500 |
-| price | 0.0091 | 0.0346 | 50.0000 |
-| dist_ema20 | 0.0066 | 0.0361 | 56.2500 |
-| range_pct | 0.0065 | 0.0326 | 62.5000 |
-| dvol20 | 0.0055 | 0.0289 | 43.7500 |
-| dist_vwap | 0.0005 | 0.0243 | 43.7500 |
-| iwm_sma200_up | 0.0001 | 0.0003 | 6.2500 |
-| iwm_sma50_up | 0.0000 | 0.0000 | 0.0000 |
+| atr_pct | 0.0194 | 0.0311 | 80.0000 |
+| dist_ema20 | 0.0159 | 0.0305 | 73.3333 |
+| shares_pit | 0.0133 | 0.0457 | 66.6667 |
+| dist_ema9 | 0.0090 | 0.0224 | 73.3333 |
+| price | 0.0083 | 0.0345 | 60.0000 |
+| dist_vwap | 0.0049 | 0.0340 | 46.6667 |
+| range_pct | 0.0038 | 0.0286 | 46.6667 |
+| day_dvol | 0.0017 | 0.0330 | 60.0000 |
+| sig_day_ret | 0.0004 | 0.0185 | 60.0000 |
+| qqq_day | 0.0004 | 0.0075 | 60.0000 |
+| iwm_sma200_up | 0.0000 | 0.0000 | 0.0000 |
 | spy_sma50_up | 0.0000 | 0.0000 | 0.0000 |
-| iwm_day | -0.0000 | 0.0033 | 50.0000 |
-| news_5d | -0.0003 | 0.0055 | 25.0000 |
-| news_24h | -0.0010 | 0.0033 | 18.7500 |
+| iwm_sma50_up | 0.0000 | 0.0000 | 0.0000 |
+| news_24h | -0.0009 | 0.0035 | 13.3333 |
+| news_5d | -0.0010 | 0.0042 | 26.6667 |
 
-**Remove-and-retrain check** (SHAP and permutation importance describe what a model fitted, not what generalizes): walk-forward AUC with all features 0.775; without the top 3 (dist_ema9, atr_pct, day_dvol) 0.766; with only those 3 0.798.
+**Remove-and-retrain check** (SHAP and permutation importance describe what a model fitted, not what generalizes): walk-forward AUC with all features 0.773; without the top 3 (atr_pct, dist_ema20, shares_pit) 0.755; with only those 3 0.802.
 
 ![07_partial_dependence](figures/07_partial_dependence.png)
 
@@ -568,27 +568,27 @@ A depth-3 decision tree on dev (readable splits; unstable, shown for interpretat
 
 ## 8. Rule mining with multiple-testing control
 
-6739 candidate rules (single and pairs of quartile/median conditions) with at least 60 dev trades: 6594 tested for a higher big-winner rate than the 6.1% base (one-sided binomial). 1980 pass BH-FDR q < 0.10 on dev.
+6739 candidate rules (single and pairs of quartile/median conditions) with at least 60 dev trades: 6588 tested for a higher big-winner rate than the 6.2% base (one-sided binomial). 1971 pass BH-FDR q < 0.10 on dev.
 
-Strongest rules by dev p-value, with their out-of-sample behaviour on the locked test period (test base big-winner rate 5.9%):
+Strongest rules by dev p-value, with their out-of-sample behaviour on the locked test period (test base big-winner rate 5.5%):
 
 | rule | n | big_rate% | big_loss_rate% | lift | mean_ret% | PF | p | q_BH | test_n | test_big_rate% | test_mean_ret% | test_big_loss% |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| sig_day_ret >= 0.264 AND atr_pct >= 0.0921 | 325 | 26.2 | 27.4 | 4.29 | 2.58 | 1.48 | 1.23e-30 | 8.11e-27 | 45 | 22.2 | -1.79 | 44.4 |
-| atr_pct >= 0.0921 AND dist_ema9 >= 0.251 | 309 | 25.9 | 27.5 | 4.24 | 2.9 | 1.55 | 1.3e-28 | 4.29e-25 | 40 | 20 | -3.06 | 45 |
-| atr_pct >= 0.0921 AND dist_ema9 >= 0.159 | 432 | 22 | 21.5 | 3.61 | 2.43 | 1.54 | 1.01e-27 | 2e-24 | 47 | 21.3 | -1.88 | 42.6 |
-| sig_day_ret >= 0.264 AND atr_pct >= 0.069 | 457 | 21.4 | 22.3 | 3.52 | 1.82 | 1.38 | 1.21e-27 | 2e-24 | 54 | 18.5 | -1.87 | 40.7 |
-| sig_day_ret >= 0.264 AND range_pct >= 0.242 | 449 | 21.4 | 22.7 | 3.51 | 1.93 | 1.4 | 5.19e-27 | 6.84e-24 | 47 | 21.3 | -1.59 | 42.6 |
-| range_pct >= 0.242 AND dist_ema9 >= 0.251 | 407 | 22.1 | 24.6 | 3.63 | 2.19 | 1.44 | 1.54e-26 | 1.7e-23 | 40 | 17.5 | -3.64 | 47.5 |
-| atr_pct >= 0.0921 AND dist_ema20 >= 0.324 | 304 | 25 | 27 | 4.1 | 2.69 | 1.51 | 3.23e-26 | 3.04e-23 | 34 | 17.6 | -3.79 | 47.1 |
-| atr_pct >= 0.0921 AND range_pct >= 0.242 | 362 | 22.9 | 24.3 | 3.76 | 2.35 | 1.48 | 1.01e-25 | 8.29e-23 | 46 | 21.7 | -1.22 | 39.1 |
-| atr_pct >= 0.0921 AND day_dvol >= 9.05e+07 | 232 | 28 | 24.1 | 4.59 | 4.01 | 1.82 | 1.21e-25 | 8.88e-23 | 35 | 22.9 | -0.313 | 42.9 |
-| atr_pct >= 0.0921 AND day_dvol >= 3.7e+07 | 353 | 22.9 | 22.4 | 3.76 | 2.36 | 1.51 | 3.61e-25 | 2.38e-22 | 49 | 20.4 | -0.59 | 36.7 |
-| sig_day_ret >= 0.264 AND dist_ema9 >= 0.251 | 442 | 20.8 | 22.6 | 3.41 | 1.89 | 1.4 | 4.53e-25 | 2.72e-22 | 46 | 15.2 | -3.42 | 43.5 |
-| sig_day_ret >= 0.162 AND atr_pct >= 0.0921 | 485 | 20 | 19.8 | 3.28 | 1.96 | 1.45 | 5.68e-25 | 3.12e-22 | 63 | 17.5 | -1.1 | 31.7 |
-| atr_pct >= 0.0921 AND dist_ema20 >= 0.197 | 404 | 21.5 | 22 | 3.53 | 2.32 | 1.51 | 7.24e-25 | 3.67e-22 | 42 | 16.7 | -3.35 | 42.9 |
-| gap_open >= 0.0372 AND atr_pct >= 0.0921 | 353 | 22.4 | 22.9 | 3.67 | 2.58 | 1.56 | 7.47e-24 | 3.19e-21 | 54 | 20.4 | -1.04 | 37 |
-| sig_day_ret >= 0.264 AND dist_ema20 >= 0.324 | 393 | 21.4 | 24.4 | 3.5 | 1.72 | 1.34 | 7.7e-24 | 3.19e-21 | 39 | 12.8 | -3.99 | 46.2 |
+| sig_day_ret >= 0.264 AND atr_pct >= 0.092 | 318 | 26.4 | 26.7 | 4.29 | 2.61 | 1.49 | 2.44e-30 | 1.61e-26 | 55 | 20 | -1.35 | 43.6 |
+| atr_pct >= 0.092 AND dist_ema9 >= 0.252 | 302 | 26.2 | 26.8 | 4.25 | 2.92 | 1.56 | 2.5e-28 | 8.24e-25 | 47 | 19.1 | -2.22 | 46.8 |
+| sig_day_ret >= 0.264 AND atr_pct >= 0.0687 | 447 | 21.7 | 21.9 | 3.52 | 1.83 | 1.39 | 1.75e-27 | 3.85e-24 | 66 | 16.7 | -1.42 | 39.4 |
+| sig_day_ret >= 0.264 AND range_pct >= 0.242 | 439 | 21.6 | 22.3 | 3.51 | 1.95 | 1.41 | 7.42e-27 | 1.22e-23 | 58 | 19 | -1.11 | 41.4 |
+| atr_pct >= 0.092 AND dist_ema9 >= 0.16 | 425 | 21.9 | 20.9 | 3.55 | 2.42 | 1.55 | 1.05e-26 | 1.39e-23 | 56 | 21.4 | -1.15 | 42.9 |
+| atr_pct >= 0.092 AND dist_ema20 >= 0.325 | 300 | 25.3 | 26.3 | 4.11 | 2.8 | 1.53 | 2.37e-26 | 2.6e-23 | 37 | 16.2 | -3.99 | 48.6 |
+| range_pct >= 0.242 AND dist_ema9 >= 0.252 | 400 | 22.2 | 24 | 3.61 | 2.19 | 1.45 | 3.57e-26 | 3.36e-23 | 48 | 16.7 | -2.71 | 47.9 |
+| atr_pct >= 0.092 AND range_pct >= 0.242 | 355 | 23.1 | 23.7 | 3.75 | 2.37 | 1.49 | 2.17e-25 | 1.78e-22 | 56 | 19.6 | -0.862 | 39.3 |
+| atr_pct >= 0.092 AND day_dvol >= 9.05e+07 | 228 | 28.1 | 23.2 | 4.56 | 3.99 | 1.83 | 4.25e-25 | 3.11e-22 | 41 | 22 | 0.336 | 43.9 |
+| sig_day_ret >= 0.264 AND dist_ema9 >= 0.252 | 431 | 21.1 | 22.3 | 3.43 | 1.9 | 1.4 | 5.46e-25 | 3.59e-22 | 56 | 14.3 | -2.52 | 42.9 |
+| atr_pct >= 0.092 AND day_dvol >= 3.7e+07 | 346 | 23.1 | 22 | 3.75 | 2.33 | 1.51 | 7.65e-25 | 4.58e-22 | 58 | 19 | 0.00228 | 36.2 |
+| atr_pct >= 0.092 AND dist_ema20 >= 0.198 | 397 | 21.7 | 21.4 | 3.52 | 2.44 | 1.54 | 1.66e-24 | 9.1e-22 | 51 | 15.7 | -3.33 | 43.1 |
+| sig_day_ret >= 0.264 AND dist_ema20 >= 0.325 | 384 | 21.9 | 24.2 | 3.55 | 1.83 | 1.37 | 2.82e-24 | 1.36e-21 | 45 | 11.1 | -3.91 | 44.4 |
+| sig_day_ret >= 0.162 AND atr_pct >= 0.092 | 474 | 20 | 19.4 | 3.25 | 1.97 | 1.46 | 2.9e-24 | 1.36e-21 | 77 | 16.9 | -0.713 | 31.2 |
+| range_pct >= 0.242 AND dist_ema20 >= 0.325 | 383 | 21.7 | 25.1 | 3.52 | 1.98 | 1.39 | 1.01e-23 | 4.17e-21 | 37 | 13.5 | -4.59 | 51.4 |
 
 ## 9. Winner archetypes (clustering)
 
@@ -596,15 +596,15 @@ K-means on 157 big winners (>= +10%) using 10 standardized features; k = 2 chose
 
 | cluster | n | mean_ret% | sig_day_ret% | gap_open% | rel_vol | atr% | range% | price | dvol20_$M | run5% | headroom | top_sectors | examples |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 0 | 25 | 30.81 | 177.74 | 36.07 | 62.48 | 15.30 | 146.36 | 4.29 | 2.45 | 3.93 | 0.14 | Technology (15), Industrials (5) | INTZ, JLHL, AZIO, ICCT, GWH |
-| 1 | 132 | 23.99 | 32.73 | 8.22 | 3.97 | 10.90 | 33.29 | 5.00 | 11.19 | 13.72 | 0.09 | Technology (37), Healthcare (30) | BATL, BMEA, EYEN, INDO, BATL |
+| 0 | 132 | 23.99 | 32.73 | 8.22 | 3.97 | 10.90 | 33.29 | 5.00 | 11.19 | 13.72 | 0.09 | Technology (37), Healthcare (30) | BATL, BMEA, EYEN, INDO, BATL |
+| 1 | 25 | 30.81 | 177.74 | 36.07 | 62.48 | 15.30 | 146.36 | 4.29 | 2.45 | 3.93 | 0.14 | Technology (15), Industrials (5) | INTZ, JLHL, AZIO, ICCT, GWH |
 
 Share of ALL trades falling in each archetype's region of feature space (nearest centroid) and how those trades fared:
 
 | arch | n | win% | big% | mean% | median% | PF | sum_ret | share_of_total_profit% |
 |---|---|---|---|---|---|---|---|---|
-| 0.00 | 81.00 | 33.33 | 30.86 | 0.79 | -11.05 | 1.09 | 0.64 | 18.42 |
-| 1.00 | 2503.00 | 40.35 | 5.27 | 0.11 | -0.57 | 1.06 | 2.82 | 81.58 |
+| 0.00 | 2503.00 | 40.35 | 5.27 | 0.11 | -0.57 | 1.06 | 2.82 | 81.58 |
+| 1.00 | 81.00 | 33.33 | 30.86 | 0.79 | -11.05 | 1.09 | 0.64 | 18.42 |
 
 ## 10. Event study: the path around entry
 
@@ -625,43 +625,43 @@ Probabilistic / deflated Sharpe ratio (Bailey and Lopez de Prado, 2014) on dev d
 
 | strategy | days | daily_SR | annual_SR | skew | kurtosis | NW_t(mean) | P(skill) N=1 | P(skill) N=30 | P(skill) N=100 | P(skill) N=300 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| base | 452 | 0.054 | 0.858 | 1.810 | 9.746 | 1.016 | 0.886 | 0.192 | 0.092 | 0.045 |
-| S1 | 452 | 0.113 | 1.796 | 3.855 | 28.470 | 2.469 | 0.999 | 0.816 | 0.672 | 0.532 |
-| S2 | 452 | 0.115 | 1.819 | 3.633 | 27.525 | 2.452 | 0.999 | 0.816 | 0.671 | 0.531 |
-| H3 | 452 | 0.099 | 1.574 | 5.613 | 55.461 | 1.705 | 0.997 | 0.758 | 0.596 | 0.451 |
-| H2 | 452 | 0.081 | 1.291 | 5.179 | 53.555 | 1.719 | 0.983 | 0.517 | 0.340 | 0.218 |
+| base | 432 | 0.059 | 0.935 | 1.790 | 9.603 | 1.084 | 0.901 | 0.216 | 0.107 | 0.054 |
+| S1 | 432 | 0.108 | 1.717 | 3.848 | 28.932 | 2.302 | 0.997 | 0.751 | 0.588 | 0.443 |
+| S2 | 432 | 0.112 | 1.772 | 3.634 | 28.095 | 2.327 | 0.998 | 0.770 | 0.611 | 0.467 |
+| H3 | 432 | 0.094 | 1.497 | 5.692 | 57.065 | 1.570 | 0.995 | 0.684 | 0.509 | 0.366 |
+| H2 | 432 | 0.073 | 1.154 | 5.178 | 58.361 | 1.493 | 0.964 | 0.394 | 0.234 | 0.138 |
 
 ## 12. Do the main findings hold out of sample (dev vs the locked test period)?
 
 | group | period | n | win% | big% | big_loss% | mean% | PF |
 |---|---|---|---|---|---|---|---|
-| all trades | dev | 2328 | 40.34 | 6.10 | 5.97 | 0.20 | 1.09 |
-| all trades | test | 256 | 38.28 | 5.86 | 8.98 | -0.49 | 0.80 |
-| shares outstanding < 30M | dev | 194 | 43.30 | 18.04 | 13.40 | 2.56 | 1.74 |
-| shares outstanding < 30M | test | 18 | 61.11 | 22.22 | 5.56 | 3.81 | 2.96 |
-| market cap < $200M | dev | 315 | 46.35 | 12.70 | 10.48 | 1.91 | 1.70 |
-| market cap < $200M | test | 37 | 51.35 | 10.81 | 2.70 | 1.54 | 1.99 |
-| daily ATR >= 9% | dev | 614 | 42.35 | 16.12 | 16.29 | 1.45 | 1.38 |
-| daily ATR >= 9% | test | 70 | 34.29 | 15.71 | 31.43 | -1.38 | 0.77 |
-| signal-day move >= +26% | dev | 603 | 40.46 | 16.75 | 18.24 | 1.18 | 1.28 |
-| signal-day move >= +26% | test | 65 | 32.31 | 15.38 | 33.85 | -1.55 | 0.74 |
-| rel. volume >= 5.4 | dev | 463 | 40.82 | 14.69 | 16.41 | 1.38 | 1.37 |
-| rel. volume >= 5.4 | test | 58 | 29.31 | 12.07 | 29.31 | -1.80 | 0.67 |
-| price below 200 SMA | dev | 655 | 37.40 | 5.80 | 6.41 | -0.23 | 0.91 |
-| price below 200 SMA | test | 100 | 38.00 | 10.00 | 17.00 | -0.82 | 0.78 |
-| price above 200 SMA | dev | 1584 | 41.86 | 6.31 | 5.68 | 0.43 | 1.20 |
-| price above 200 SMA | test | 145 | 40.00 | 2.76 | 3.45 | -0.20 | 0.88 |
-| headroom >= 20% | dev | 502 | 41.63 | 10.36 | 10.36 | 1.18 | 1.42 |
-| headroom >= 20% | test | 44 | 45.45 | 11.36 | 11.36 | 1.23 | 1.44 |
-| market cap < $200M and headroom >= 20% | dev | 75 | 44.00 | 16.00 | 16.00 | 3.02 | 1.83 |
-| market cap < $200M and headroom >= 20% | test | 10 | 50.00 | 10.00 | 0.00 | 1.83 | 2.09 |
-| shares < 30M and headroom >= 20% | dev | 46 | 39.13 | 23.91 | 19.57 | 5.18 | 2.13 |
-| shares < 30M and headroom >= 20% | test | 4 | 50.00 | 25.00 | 0.00 | 5.28 | 3.30 |
-| technology sector | dev | 556 | 45.86 | 8.99 | 6.47 | 0.95 | 1.41 |
-| technology sector | test | 36 | 41.67 | 5.56 | 16.67 | -1.24 | 0.64 |
+| all trades | dev | 2273 | 40.26 | 6.16 | 5.90 | 0.22 | 1.10 |
+| all trades | test | 311 | 39.23 | 5.47 | 9.00 | -0.48 | 0.81 |
+| shares outstanding < 30M | dev | 187 | 43.32 | 18.18 | 13.90 | 2.70 | 1.78 |
+| shares outstanding < 30M | test | 25 | 56.00 | 20.00 | 4.00 | 2.41 | 2.08 |
+| market cap < $200M | dev | 305 | 45.90 | 12.79 | 10.82 | 1.99 | 1.72 |
+| market cap < $200M | test | 47 | 53.19 | 10.64 | 2.13 | 1.12 | 1.66 |
+| daily ATR >= 9% | dev | 597 | 42.21 | 16.25 | 16.08 | 1.48 | 1.38 |
+| daily ATR >= 9% | test | 87 | 36.78 | 14.94 | 29.89 | -0.99 | 0.82 |
+| signal-day move >= +26% | dev | 589 | 40.58 | 16.98 | 18.00 | 1.19 | 1.29 |
+| signal-day move >= +26% | test | 79 | 32.91 | 13.92 | 32.91 | -1.14 | 0.81 |
+| rel. volume >= 5.4 | dev | 455 | 40.88 | 14.73 | 16.26 | 1.32 | 1.35 |
+| rel. volume >= 5.4 | test | 66 | 30.30 | 12.12 | 28.79 | -1.00 | 0.81 |
+| price below 200 SMA | dev | 638 | 37.30 | 5.96 | 6.11 | -0.14 | 0.94 |
+| price below 200 SMA | test | 117 | 38.46 | 8.55 | 17.09 | -1.18 | 0.68 |
+| price above 200 SMA | dev | 1548 | 41.80 | 6.33 | 5.68 | 0.42 | 1.20 |
+| price above 200 SMA | test | 181 | 40.88 | 3.31 | 3.87 | 0.01 | 1.00 |
+| headroom >= 20% | dev | 487 | 42.09 | 10.47 | 10.47 | 1.15 | 1.41 |
+| headroom >= 20% | test | 59 | 40.68 | 10.17 | 10.17 | 1.46 | 1.51 |
+| market cap < $200M and headroom >= 20% | dev | 72 | 45.83 | 16.67 | 16.67 | 3.42 | 1.97 |
+| market cap < $200M and headroom >= 20% | test | 13 | 38.46 | 7.69 | 0.00 | -0.08 | 0.97 |
+| shares < 30M and headroom >= 20% | dev | 43 | 41.86 | 25.58 | 20.93 | 5.91 | 2.31 |
+| shares < 30M and headroom >= 20% | test | 7 | 28.57 | 14.29 | 0.00 | 0.74 | 1.21 |
+| technology sector | dev | 547 | 45.89 | 8.96 | 6.22 | 0.99 | 1.43 |
+| technology sector | test | 45 | 42.22 | 6.67 | 17.78 | -1.32 | 0.63 |
 | earnings-linked (filing 0-3d) | dev | 104 | 43.27 | 1.92 | 7.69 | -1.22 | 0.53 |
-| company news in prior 24h | dev | 250 | 39.20 | 9.20 | 8.80 | 0.24 | 1.09 |
-| company news in prior 24h | test | 17 | 23.53 | 5.88 | 17.65 | -1.74 | 0.54 |
+| company news in prior 24h | dev | 247 | 39.68 | 9.31 | 8.50 | 0.32 | 1.12 |
+| company news in prior 24h | test | 20 | 20.00 | 5.00 | 20.00 | -2.37 | 0.42 |
 
 
 ## Methods and sources

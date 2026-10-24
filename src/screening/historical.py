@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from src.screening.resistance import ResistanceConfig, ResistanceDetector
+from src.utils import timing
 
 ATR_PIVOT_CONFIG = ResistanceConfig(
     pivot_left=3,
@@ -64,16 +65,17 @@ class HistoricalPriceVolumeScreener:
 
     def _level_uppers(self, prepared, session_date):
         """ATR and the top of every atr_pivot zone known before session_date (cached per date)."""
-        cache = self.ladder_cache
-        if cache is not None and session_date in cache:
-            return cache[session_date]
-        k = self.detector.known_through_before(prepared, session_date)
-        atr = float(prepared.atr[k]) if k >= 0 else np.nan
-        lv = self.detector.levels(prepared, k)
-        out = (atr, lv["upper"].to_numpy(dtype=float))
-        if cache is not None:
-            cache[session_date] = out
-        return out
+        with timing.wstage("screen ladder/levels"):
+            cache = self.ladder_cache
+            if cache is not None and session_date in cache:
+                return cache[session_date]
+            k = self.detector.known_through_before(prepared, session_date)
+            atr = float(prepared.atr[k]) if k >= 0 else np.nan
+            lv = self.detector.levels(prepared, k)
+            out = (atr, lv["upper"].to_numpy(dtype=float))
+            if cache is not None:
+                cache[session_date] = out
+            return out
 
     def scan(self, daily_df, minute_df, context=None):
         daily = self._prepare(daily_df)
@@ -129,24 +131,25 @@ class HistoricalPriceVolumeScreener:
             )
             headroom = np.nan
             if prepared is not None:
-                cheap_pass = (
-                    self.min_price <= candidate["close"] <= self.max_price
-                    and average_volume >= self.min_average_volume
-                    and relative_volume >= self.min_relative_volume
-                    and candidate["close"] > previous_close
-                    and session_open > previous_close
-                )
-                if self.lazy_resistance and not cheap_pass:
-                    resistance = float("inf")
-                else:
-                    atr, uppers = self._level_uppers(prepared, session_date)
-                    crossed = uppers[
-                        (uppers > previous_close)
-                        & (uppers + self.min_breakout_atr * atr < candidate["close"])
-                    ]
-                    resistance = float(crossed.max()) if len(crossed) else float("inf")
-                    above = uppers[uppers > candidate["close"]]
-                    headroom = float(above.min() / candidate["close"] - 1) if len(above) else 9.99
+                with timing.wstage("screen cheap criteria"):
+                    cheap_pass = (
+                        self.min_price <= candidate["close"] <= self.max_price
+                        and average_volume >= self.min_average_volume
+                        and relative_volume >= self.min_relative_volume
+                        and candidate["close"] > previous_close
+                        and session_open > previous_close
+                    )
+                    if self.lazy_resistance and not cheap_pass:
+                        resistance = float("inf")
+                    else:
+                        atr, uppers = self._level_uppers(prepared, session_date)
+                        crossed = uppers[
+                            (uppers > previous_close)
+                            & (uppers + self.min_breakout_atr * atr < candidate["close"])
+                        ]
+                        resistance = float(crossed.max()) if len(crossed) else float("inf")
+                        above = uppers[uppers > candidate["close"]]
+                        headroom = float(above.min() / candidate["close"] - 1) if len(above) else 9.99
             date_key = pd.Timestamp(session_date)
             caps = context["market_cap"]
             if caps.empty:

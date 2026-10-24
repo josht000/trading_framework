@@ -352,11 +352,9 @@ def run_pit_backtest():
             "data/pit/daily_pit.parquet",
             columns=["date", "symbol", "open", "high", "low", "close", "volume", "delisted_utc"],
         )
-    from src.data.pit_integrity import load_minute
+    from src.framework import data_cache
     with timing.stage("load minute bars (load_minute + tz convert)"):
-        minute = load_minute(symbols=set(cands["symbol"]))  # overlapping day files repeat bars
-        if str(getattr(minute["timestamp"].dtype, "tz", None)) != "America/New_York":
-            minute["timestamp"] = pd.to_datetime(minute["timestamp"], utc=True).dt.tz_convert("America/New_York")
+        minute, minute_by = data_cache.load_minute(symbols=set(cands["symbol"]), by_symbol=True)
     print(f"candidate symbol-days: {len(cands)}, symbols: {cands['symbol'].nunique()}, "
           f"minute rows: {len(minute)}")
 
@@ -401,7 +399,6 @@ def run_pit_backtest():
 
     with timing.stage("group by symbol (daily_by/minute_by/cand_dates)"):
         daily_by = {s: g.set_index("date").sort_index() for s, g in daily.groupby("symbol")}
-        minute_by = {s: g.set_index("timestamp").sort_index() for s, g in minute.groupby("symbol")}
         cand_dates = {s: set(pd.DatetimeIndex(g["date"]).date) for s, g in cands.groupby("symbol")}
 
     with timing.stage("load ladder cache"):
@@ -453,7 +450,8 @@ def run_pit_backtest():
             rows.append({"variant": name, **row})
     summary = pd.DataFrame(rows).set_index("variant")
     with pd.option_context("display.width", 250, "display.max_columns", 30, "display.float_format", "{:.2f}".format):
-        print(summary)
+        from src.framework import report
+        report.table(summary.reset_index(), title="Variant summary")
     from src.backtest import kfold as K
     with timing.stage("kfold stability"):
         for name in variants:
@@ -462,9 +460,11 @@ def run_pit_backtest():
                 kdays = pd.bdate_range(pd.to_datetime(kt["entry_time"].astype(str).str[:10]).min(),
                                        pd.to_datetime(kt["entry_time"].astype(str).str[:10]).max())
                 krows, ksummary = K.kfold_stability(kt, kdays, rank="rel_vol", pool=kt, label=f"{name}|{which}")
-                print(f"k=5 {name} ({which}): profitable={ksummary['folds_profit']}, "
-                      f"beats_random={ksummary['folds_beat_random']}, t={ksummary['fold_t']:.2f}, "
-                      f"best_fold_share={ksummary['best_fold_share']:.2f}, p={ksummary['kfold_p']:.3f}")
+                report.table(pd.DataFrame([{
+                    "variant": name, "set": which, "profitable": ksummary["folds_profit"],
+                    "beats_random": ksummary["folds_beat_random"], "t": ksummary["fold_t"],
+                    "best_fold_share": ksummary["best_fold_share"], "p": ksummary["kfold_p"],
+                }]), title="K-fold stability")
     with timing.stage("write summary csv"):
         summary.to_csv(os.path.join("results", f"pit_summary_{PREFIX}_{which}.csv"))
     r = cfg["realism"]
@@ -480,17 +480,13 @@ def build_symbol_contexts_pit(symbols, start, end, with_news):
     """Market cap from SimFin (pass-through when missing); Alpaca news only when required."""
     if with_news:
         return build_symbol_contexts(symbols, start, end)
-    contexts = {s: {} for s in symbols}
-    if os.getenv("SIMFIN_API_KEY"):
-        try:
-            store = SimFinStore()
-            for s in symbols:
-                cap = store.market_cap_series(s)
-                if len(cap) > 0:
-                    contexts[s]["market_cap"] = cap
-        except Exception as e:
-            print(f"  SimFin load failed: {e}")
-    return contexts
+    from src.framework.data_cache import load_simfin_contexts
+
+    try:
+        return load_simfin_contexts(symbols)
+    except Exception as e:
+        print(f"  SimFin load failed: {e}")
+        return {s: {} for s in symbols}
 
 
 def main():

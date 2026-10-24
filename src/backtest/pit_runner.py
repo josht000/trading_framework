@@ -78,7 +78,7 @@ def process_symbol(task):
     n_before = len(levels)
     strategy.screener.ladder_cache = levels if cfg["use_cache"] else None
     try:
-        with timing.wstage("apply_strategy (screen+ladder)"):
+        with timing.wstage("apply_strategy (screen/signals)"):
             sig = strategy.apply_strategy(daily_df, minute_df, ctx, entry_dates=cand_dates)
     except Exception as e:
         return s, [], 0, None, f"{s}: error {e}"
@@ -137,11 +137,27 @@ def _exit_fill(sig, tm, trigger_ts, shares, rz):
     return avg, partial
 
 
-def _features(sig, ts, ep, daily_df, day, atr_prior):
-    d = daily_df[daily_df.index < pd.Timestamp(day)]
+def _feature_views(sig, daily_df):
+    dates = np.asarray(sig.index.date)
+    times = sig.index.time
+    views = {"days": {}, "daily": {}}
+    for day in np.unique(dates):
+        all_idx = np.flatnonzero(dates == day)
+        rth_idx = all_idx[(times[all_idx] >= T_OPEN) & (times[all_idx] < T_CLOSE)]
+        views["days"][day] = {"all": sig.iloc[all_idx], "rth": sig.iloc[rth_idx]}
+    for day in np.unique(dates):
+        views["daily"][day] = daily_df[daily_df.index < pd.Timestamp(day)]
+    return views
+
+
+def _features(sig, ts, ep, daily_df, day, atr_prior, views=None):
+    d = views["daily"][day] if views is not None else daily_df[daily_df.index < pd.Timestamp(day)]
     prev_close = float(d["close"].iloc[-1])
-    today = sig[(sig.index.date == day) & (sig.index <= ts)]
-    today = today[(today.index.time >= T_OPEN) & (today.index.time < T_CLOSE)]
+    if views is None:
+        today = sig[(sig.index.date == day) & (sig.index <= ts)]
+        today = today[(today.index.time >= T_OPEN) & (today.index.time < T_CLOSE)]
+    else:
+        today = views["days"][day]["rth"].loc[:ts]
     row = sig.loc[ts]
     c60 = today[today.index >= ts - pd.Timedelta(minutes=60)]["close"]
     return {
@@ -196,9 +212,10 @@ def _news_features(news, ts):
     return out
 
 
-def _ma_features(daily_df, day, ep):
+def _ma_features(daily_df, day, ep, views=None):
     """Moving-average position at 15:55: 200 SMA and 9/20 EMA (prior closes, rolled forward with the 15:55 price)."""
-    c = daily_df.loc[daily_df.index < pd.Timestamp(day), "close"].astype(float)
+    base = views["daily"][day] if views is not None else daily_df.loc[daily_df.index < pd.Timestamp(day)]
+    c = base["close"].astype(float)
     out = {}
     sma200 = float(c.tail(200).mean()) if len(c) >= 200 else float("nan")
     out["sma200"] = sma200
@@ -214,15 +231,23 @@ def _ma_features(daily_df, day, ep):
     return out
 
 
-def _path(sig, tm, ts, ep, day, later):
+def _path(sig, tm, ts, ep, day, later, views=None):
     """Where the overnight move happened: after-hours (to 16:45), pre-market, and the open."""
     out = {"ah45_min": np.nan, "ah45_last": np.nan, "pm_last": np.nan, "open_ret": np.nan}
-    ah = sig[(sig.index > ts) & (sig.index.date == day) & (tm >= T_CLOSE) & (tm <= pd.Timestamp("16:45").time())]
+    if views is None:
+        ah = sig[(sig.index > ts) & (sig.index.date == day) & (tm >= T_CLOSE) & (tm <= pd.Timestamp("16:45").time())]
+    else:
+        day_view = views["days"][day]["all"]
+        ah = day_view[(day_view.index > ts) & (day_view.index.time >= T_CLOSE) & (day_view.index.time <= pd.Timestamp("16:45").time())]
     if len(ah):
         out["ah45_min"], out["ah45_last"] = float(ah["close"].min() / ep - 1), float(ah["close"].iloc[-1] / ep - 1)
     if len(later):
         nd = later[0].date()
-        pm = sig[(sig.index.date == nd) & (tm >= PM_DEFAULT_START) & (tm < T_OPEN)]
+        if views is None:
+            pm = sig[(sig.index.date == nd) & (tm >= PM_DEFAULT_START) & (tm < T_OPEN)]
+        else:
+            next_view = views["days"].get(nd, {"all": sig.iloc[0:0]})["all"]
+            pm = next_view[(next_view.index.time >= PM_DEFAULT_START) & (next_view.index.time < T_OPEN)]
         if len(pm):
             out["pm_last"] = float(pm["close"].iloc[-1] / ep - 1)
         out["open_ret"] = float(sig.at[later[0], "close"] / ep - 1)

@@ -192,6 +192,7 @@ def haircut_B(areas, n_days, sd_fallback=None, registry=None):
             "rho_avg": rho, "by_area": by_area, "unknown": unknown}
 
 
+@timing.timed("bias_estimate")
 def bias_estimate(areas, n_days, A=None, A_areas=(), sd_fallback=None, oos=False, registry=None, total_log=None):
     """Headline bias per the reporting rule. Returns dict(value, A, B, B_known, N, src, by_area)."""
     if oos:
@@ -266,76 +267,83 @@ def random_pick(pool, k_by_day, days, max_pos=5, frac=0.2, n_draws=2000, seed=SE
     return mat
 
 
+@timing.timed("partition")
 def partition(trades, days, pool=None, universe=None, rank="rel_vol", bias=None, max_pos=5, frac=0.2, n_draws=2000, n_boot=5000, seed=SEED):
     """
     Partition test for the trades table `trades` (columns ret, entry_time, exit_time, rank column) over business days `days`.
     pool: candidate rows before ranking (default: trades). bias: dict from bias_estimate (value NaN => skill n/a).
     Returns a flat dict of numbers plus `_series` (per-day arrays for plots/tests).
     """
-    sel = select_trades(trades, max_pos, rank).copy()
-    sel["frac"] = frac
-    for s in ("SPY", "IWM"):
-        sel[f"b_{s}"] = window_returns(sel, s)
-    n_nan = int(sel["b_IWM"].isna().sum())
-    sel[["b_SPY", "b_IWM"]] = sel[["b_SPY", "b_IWM"]].fillna(0.0)
-    g = sel.groupby("day")
-    r_day = np.log1p((sel["frac"] * sel["ret"]).groupby(sel["day"]).sum()).reindex(days, fill_value=0.0)
-    f_day = sel["frac"].groupby(sel["day"]).sum().reindex(days, fill_value=0.0)
-    tr = {s: (sel["frac"] * sel[f"b_{s}"]).groupby(sel["day"]).sum().reindex(days, fill_value=0.0)
-          for s in ("SPY", "IWM")}
-    total = float(r_day.sum())
-    out = {"days": len(days), "trades": len(sel), "total_log": total, "avg_fraction_invested": float(f_day[f_day > 0].mean()) if (f_day > 0).any() else 0.0,
-           "trend_spy": float(tr["SPY"].sum()), "trend_iwm": float(tr["IWM"].sum()), "window_missing": n_nan, "cost_est": _cost(sel, frac)}
-    inv = f_day > 0
-    for s in ("SPY", "IWM"):
-        bw = (tr[s] / f_day.where(inv)).dropna()
-        a, b, t = _ols(r_day[inv].to_numpy(), bw.reindex(r_day[inv].index).to_numpy())
-        out.update({f"beta_{s.lower()}": b, f"beta_t_{s.lower()}": t, f"alpha_day_{s.lower()}": a, f"trend_beta_{s.lower()}": b * float(bw.sum())})
-    k_by_day = g.size().to_dict()
+    with timing.stage("select + benchmark windows"):
+        sel = select_trades(trades, max_pos, rank).copy()
+        sel["frac"] = frac
+        for s in ("SPY", "IWM"):
+            sel[f"b_{s}"] = window_returns(sel, s)
+        n_nan = int(sel["b_IWM"].isna().sum())
+        sel[["b_SPY", "b_IWM"]] = sel[["b_SPY", "b_IWM"]].fillna(0.0)
+    with timing.stage("aggregate returns + trends"):
+        g = sel.groupby("day")
+        r_day = np.log1p((sel["frac"] * sel["ret"]).groupby(sel["day"]).sum()).reindex(days, fill_value=0.0)
+        f_day = sel["frac"].groupby(sel["day"]).sum().reindex(days, fill_value=0.0)
+        tr = {s: (sel["frac"] * sel[f"b_{s}"]).groupby(sel["day"]).sum().reindex(days, fill_value=0.0)
+              for s in ("SPY", "IWM")}
+        total = float(r_day.sum())
+        out = {"days": len(days), "trades": len(sel), "total_log": total, "avg_fraction_invested": float(f_day[f_day > 0].mean()) if (f_day > 0).any() else 0.0,
+               "trend_spy": float(tr["SPY"].sum()), "trend_iwm": float(tr["IWM"].sum()), "window_missing": n_nan, "cost_est": _cost(sel, frac)}
+        inv = f_day > 0
+        for s in ("SPY", "IWM"):
+            bw = (tr[s] / f_day.where(inv)).dropna()
+            a, b, t = _ols(r_day[inv].to_numpy(), bw.reindex(r_day[inv].index).to_numpy())
+            out.update({f"beta_{s.lower()}": b, f"beta_t_{s.lower()}": t, f"alpha_day_{s.lower()}": a, f"trend_beta_{s.lower()}": b * float(bw.sum())})
+        k_by_day = g.size().to_dict()
     pool = trades if pool is None else pool
     universe = pool if universe is None else universe
-    mat_pool = random_pick(pool, k_by_day, days, max_pos, frac, n_draws, seed)
-    mat_universe = random_pick(universe, k_by_day, days, max_pos, frac, n_draws, seed + 17)
-    rp_pool, rp_universe = mat_pool.sum(1), mat_universe.sum(1)
-    rp_day_pool, rp_day_universe = mat_pool.mean(0), mat_universe.mean(0)
-    def random_stats(x):
-        return float(x.mean()), float((np.sum(x >= total) + 1) / (n_draws + 1))
-    ru, pu = random_stats(rp_universe)
-    rp, pp = random_stats(rp_pool)
-    pool_days = pd.to_datetime(pool["entry_time"].astype(str).str[:10]).value_counts()
-    universe_days = pd.to_datetime(universe["entry_time"].astype(str).str[:10]).value_counts()
-    choice_days_pool = int(sum(pool_days.get(d, 0) <= k for d, k in k_by_day.items()))
-    choice_days_universe = int(sum(universe_days.get(d, 0) <= k for d, k in k_by_day.items()))
-    out.update({"random_pick": rp, "random_pick_pool": rp, "random_pick_universe": ru,
-                "random_p": pp, "random_p_pool": pp, "random_p_universe": pu,
-                "random_lo": float(np.quantile(rp_pool, .025)), "random_hi": float(np.quantile(rp_pool, .975)),
-                "random_lo_universe": float(np.quantile(rp_universe, .025)), "random_hi_universe": float(np.quantile(rp_universe, .975)),
-                "days_no_choice_pool": choice_days_pool, "days_no_choice_universe": choice_days_universe,
-                "selection_skill": total - rp, "skill_vs_pool": total - rp,
-                "skill_vs_universe": total - ru})
-    bias = bias or {"value": np.nan, "src": "n/a: not computed"}
-    b = bias["value"]
-    out.update({"bias": b, "bias_A": bias.get("A"), "bias_B": bias.get("B"),
-                "bias_N": bias.get("N"), "bias_N_eff": bias.get("N_eff"),
-                "bias_sd": bias.get("sd"), "bias_signed": bias.get("signed"),
-                "bias_unreliable": bias.get("unreliable", False), "bias_src": bias["src"]})
-    out["skill"] = total - out["trend_iwm"] - b
-    out["skill_vs_random"] = total - out["random_pick"] - b
-    out["skill_pct"] = out["skill"] / total if total > 0 and out["skill"] >= 0 and np.isfinite(b) else np.nan
-    out["skill_pct_random"] = out["skill_vs_pool"] / total if total > 0 and out["skill_vs_pool"] >= 0 and np.isfinite(b) else np.nan
-    out["skill_pct_note"] = "" if total > 0 and out["skill"] >= 0 else "skill <= 0 or total <= 0"
-    bb = 0.0 if not np.isfinite(b) else b
-    rng = np.random.default_rng(seed + 1)
-    ix = rng.integers(0, len(days), (n_boot, len(days)))
-    for name, d in (("", (r_day - tr["IWM"]).to_numpy()), ("_vs_random", (r_day.to_numpy() - rp_day_pool))):
-        sk = d[ix].sum(1) - bb
-        out[f"skill{name}_lo"], out[f"skill{name}_hi"] = float(np.quantile(sk, .025)), float(np.quantile(sk, .975))
-        out[f"skill{name}_p"] = float((np.sum(sk <= 0) + 1) / (n_boot + 1))
-    keep = sel.drop(sel["ret"].nlargest(5).index)
-    kg = keep.groupby("day")
-    r5 = np.log1p((keep["frac"] * keep["ret"]).groupby(keep["day"]).sum()).reindex(days, fill_value=0.0)
-    t5 = (keep["frac"] * keep["b_IWM"]).groupby(keep["day"]).sum().reindex(days, fill_value=0.0)
-    out["skill_ex5"] = float(r5.sum() - t5.sum() - bb)
+    with timing.stage("random-pick baselines"):
+        mat_pool = random_pick(pool, k_by_day, days, max_pos, frac, n_draws, seed)
+        mat_universe = random_pick(universe, k_by_day, days, max_pos, frac, n_draws, seed + 17)
+    with timing.stage("random baseline statistics"):
+        rp_pool, rp_universe = mat_pool.sum(1), mat_universe.sum(1)
+        rp_day_pool, rp_day_universe = mat_pool.mean(0), mat_universe.mean(0)
+        def random_stats(x):
+            return float(x.mean()), float((np.sum(x >= total) + 1) / (n_draws + 1))
+        ru, pu = random_stats(rp_universe)
+        rp, pp = random_stats(rp_pool)
+        pool_days = pd.to_datetime(pool["entry_time"].astype(str).str[:10]).value_counts()
+        universe_days = pd.to_datetime(universe["entry_time"].astype(str).str[:10]).value_counts()
+        choice_days_pool = int(sum(pool_days.get(d, 0) <= k for d, k in k_by_day.items()))
+        choice_days_universe = int(sum(universe_days.get(d, 0) <= k for d, k in k_by_day.items()))
+        out.update({"random_pick": rp, "random_pick_pool": rp, "random_pick_universe": ru,
+                    "random_p": pp, "random_p_pool": pp, "random_p_universe": pu,
+                    "random_lo": float(np.quantile(rp_pool, .025)), "random_hi": float(np.quantile(rp_pool, .975)),
+                    "random_lo_universe": float(np.quantile(rp_universe, .025)), "random_hi_universe": float(np.quantile(rp_universe, .975)),
+                    "days_no_choice_pool": choice_days_pool, "days_no_choice_universe": choice_days_universe,
+                    "selection_skill": total - rp, "skill_vs_pool": total - rp,
+                    "skill_vs_universe": total - ru})
+    with timing.stage("skill bootstrap"):
+        bias = bias or {"value": np.nan, "src": "n/a: not computed"}
+        b = bias["value"]
+        out.update({"bias": b, "bias_A": bias.get("A"), "bias_B": bias.get("B"),
+                    "bias_N": bias.get("N"), "bias_N_eff": bias.get("N_eff"),
+                    "bias_sd": bias.get("sd"), "bias_signed": bias.get("signed"),
+                    "bias_unreliable": bias.get("unreliable", False), "bias_src": bias["src"]})
+        out["skill"] = total - out["trend_iwm"] - b
+        out["skill_vs_random"] = total - out["random_pick"] - b
+        out["skill_pct"] = out["skill"] / total if total > 0 and out["skill"] >= 0 and np.isfinite(b) else np.nan
+        out["skill_pct_random"] = out["skill_vs_pool"] / total if total > 0 and out["skill_vs_pool"] >= 0 and np.isfinite(b) else np.nan
+        out["skill_pct_note"] = "" if total > 0 and out["skill"] >= 0 else "skill <= 0 or total <= 0"
+        bb = 0.0 if not np.isfinite(b) else b
+        rng = np.random.default_rng(seed + 1)
+        ix = rng.integers(0, len(days), (n_boot, len(days)))
+        for name, d in (("", (r_day - tr["IWM"]).to_numpy()), ("_vs_random", (r_day.to_numpy() - rp_day_pool))):
+            sk = d[ix].sum(1) - bb
+            out[f"skill{name}_lo"], out[f"skill{name}_hi"] = float(np.quantile(sk, .025)), float(np.quantile(sk, .975))
+            out[f"skill{name}_p"] = float((np.sum(sk <= 0) + 1) / (n_boot + 1))
+    with timing.stage("top-trade robustness"):
+        keep = sel.drop(sel["ret"].nlargest(5).index)
+        kg = keep.groupby("day")
+        r5 = np.log1p((keep["frac"] * keep["ret"]).groupby(keep["day"]).sum()).reindex(days, fill_value=0.0)
+        t5 = (keep["frac"] * keep["b_IWM"]).groupby(keep["day"]).sum().reindex(days, fill_value=0.0)
+        out["skill_ex5"] = float(r5.sum() - t5.sum() - bb)
     out["_series"] = {"r_day": r_day, "trend_iwm_day": tr["IWM"], "random_totals": rp_pool,
                       "random_totals_pool": rp_pool, "random_totals_universe": rp_universe,
                       "random_day_pool": rp_day_pool, "random_day_universe": rp_day_universe}
@@ -348,9 +356,10 @@ def run_partition(trades, days, rank="rel_vol", pool=None, areas=(), A=None, A_a
         dr = simulate_account(trades, max_pos=kw.get("max_pos", 5), rank=rank, all_days=days)[2]
         sd = float(np.log1p(dr).std() * sqrt(len(days)))
         total_log = float(np.log1p(dr).sum())
-        return partition(trades, days, pool=pool, rank=rank,
-                         bias=bias_estimate(list(areas), len(days), A, A_areas, sd, oos, total_log=total_log),
-                         **kw)
+        with timing.stage("bias estimate"):
+            bias = bias_estimate(list(areas), len(days), A, A_areas, sd, oos, total_log=total_log)
+        with timing.stage("partition result"):
+            return partition(trades, days, pool=pool, rank=rank, bias=bias, **kw)
 
 
 # ---------------------------------------------------------------- tables, plots
@@ -414,10 +423,20 @@ def fmt_pct(x, d=1):
 
 def print_summary(rows, title="Partition test"):
     """Console summary: rows = list of (label, result dict)."""
-    print(f"\n{title}: total log = trend (IWM) + skill + bias; skill_p = day-bootstrap P(skill <= 0)")
-    h = f"{'setup':34s} {'total':>8s} {'trend_iwm':>9s} {'trend_spy':>9s} {'random':>8s} {'bias':>8s} {'skill':>8s} {'skill%':>7s} {'p':>6s} {'95% CI':>17s}"
-    print(h)
+    from src.framework import report
+
+    report.section(title)
+    frame = []
     for lab, r in rows:
-        ci = f"[{100 * r['skill_lo']:+.1f},{100 * r['skill_hi']:+.1f}]"
-        print(f"{lab[:34]:34s} {fmt_pct(r['total_log']):>8s} {fmt_pct(r['trend_iwm']):>9s} {fmt_pct(r['trend_spy']):>9s} {fmt_pct(r['random_pick']):>8s} "
-              f"{fmt_pct(r['bias']):>8s} {fmt_pct(r['skill']):>8s} {fmt_pct(r['skill_pct'], 0):>7s} {r['skill_p']:6.3f} {ci:>17s}")
+        frame.append({
+            "setup": lab[:34],
+            "total": r["total_log"],
+            "trend_iwm": r["trend_iwm"],
+            "trend_spy": r["trend_spy"],
+            "random": r["random_pick"],
+            "bias": r["bias"],
+            "skill": r["skill"],
+            "skill%": r["skill_pct"],
+            "p": r["skill_p"],
+        })
+    report.table(pd.DataFrame(frame), title="Partition test (log-return units)")

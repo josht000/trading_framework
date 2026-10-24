@@ -73,8 +73,9 @@ def test(T):
         days = pd.bdate_range(T[T["period"] == "test"]["day"].min(), T[T["period"] == "test"]["day"].max())
         st = run(s, days, rank=rank)
         rows.append({"setup": name, **(st or {"trades": 0})})
-    out = md_table(table(rows))
-    print("## Locked test period (one look)\n\n" + out)
+    from src.framework import report
+    report.section("Locked test period (one look)")
+    report.table(table(rows))
     return rows
 
 
@@ -110,51 +111,60 @@ def plot_curves(curves, path, test_start, title):
 
 
 def charts(T, periods=("dev", "test")):
-    defs, prep, ridge = strategies(T)
-    T = T[T["period"].isin(periods)]
-    all_days = pd.bdate_range(T["day"].min(), T["day"].max())
-    test_start = T[T["period"] == "test"]["day"].min() if "test" in periods else None
+    with timing.stage("prepare chart inputs"):
+        defs, prep, ridge = strategies(T)
+        T = T[T["period"].isin(periods)]
+        all_days = pd.bdate_range(T["day"].min(), T["day"].max())
+        test_start = T[T["period"] == "test"]["day"].min() if "test" in periods else None
     curves, stats = {}, {}
-    for name in ("R3", "R2", "RIDGE", "base+OTC", "S1", "H3"):
+    with timing.stage("build portfolio curves"):
+        for name in ("R3", "R2", "RIDGE", "base+OTC", "S1", "H3"):
+            parts = []
+            for period in periods:
+                s, rank = selected(T, name, period, defs, prep, ridge)
+                parts.append(s)
+            s = pd.concat(parts)
+            st, eq, dr = simulate_account(s, max_pos=5, rank=defs[name][1], all_days=all_days)
+            curves[name] = (eq, dr)
+            stats[name] = st
+    with timing.stage("load benchmark markets"):
+        for sym in ("SPY", "IWM"):
+            d = pd.read_parquet(os.path.join("data", "pit", "market", f"{sym}_daily.parquet")).set_index("date")["close"]
+            d = d.reindex(all_days.union(d.index)).ffill().reindex(all_days)
+            curves[sym] = (START * d / d.iloc[0], None)
+    os.makedirs(os.path.join("data", "charts", "portfolio"), exist_ok=True)
+    with timing.stage("portfolio plots"):
+        plot_curves({k: v for k, v in curves.items()}, os.path.join("data", "charts", "portfolio", "ranked_R3_with_test.png" if "test" in periods else "ranked_R3_dev.png"), test_start,
+                    f"Ranked strategies, ${START:,.0f} start, " + ("dev + locked test (shaded): " if "test" in periods else "dev only: ") + ", ".join(f"{k} ${stats[k]['final$']:,.0f}/DD {stats[k]['maxDD%']:.0f}%" for k in ("R3", "base+OTC", "S1")))
+    from src.framework import report
+    report.table(pd.DataFrame(stats).T[["trades", "win%", "mean%", "PF", "total%", "maxDD%", "min$", "sharpe"]], title="Ranked strategy charts")
+    # executed trades for R3 -> trade charts (score shown in the title)
+    with timing.stage("write ranked trades"):
         parts = []
         for period in periods:
-            s, rank = selected(T, name, period, defs, prep, ridge)
+            s, rank = selected(T, "R3", period, defs, prep, ridge)
             parts.append(s)
-        s = pd.concat(parts)
-        st, eq, dr = simulate_account(s, max_pos=5, rank=defs[name][1], all_days=all_days)
-        curves[name] = (eq, dr)
-        stats[name] = st
-    for sym in ("SPY", "IWM"):
-        d = pd.read_parquet(os.path.join("data", "pit", "market", f"{sym}_daily.parquet")).set_index("date")["close"]
-        d = d.reindex(all_days.union(d.index)).ffill().reindex(all_days)
-        curves[sym] = (START * d / d.iloc[0], None)
-    os.makedirs(os.path.join("data", "charts", "portfolio"), exist_ok=True)
-    plot_curves({k: v for k, v in curves.items()}, os.path.join("data", "charts", "portfolio", "ranked_R3_with_test.png" if "test" in periods else "ranked_R3_dev.png"), test_start,
-                f"Ranked strategies, ${START:,.0f} start, " + ("dev + locked test (shaded): " if "test" in periods else "dev only: ") + ", ".join(f"{k} ${stats[k]['final$']:,.0f}/DD {stats[k]['maxDD%']:.0f}%" for k in ("R3", "base+OTC", "S1")))
-    print(pd.DataFrame(stats).T[["trades", "win%", "mean%", "PF", "total%", "maxDD%", "min$", "sharpe"]].to_string(float_format=lambda x: f"{x:.2f}"))
-    # executed trades for R3 -> trade charts (score shown in the title)
-    parts = []
-    for period in periods:
-        s, rank = selected(T, "R3", period, defs, prep, ridge)
-        parts.append(s)
-    sel = select_trades(pd.concat(parts), 5, rank).drop(columns=["day"], errors="ignore")
-    path = os.path.join("results", "ranked_R3.csv")
-    sel.to_csv(path, index=False)
+        sel = select_trades(pd.concat(parts), 5, rank).drop(columns=["day"], errors="ignore")
+        path = os.path.join("results", "ranked_R3.csv")
+        sel.to_csv(path, index=False)
     out = os.path.join("data", "charts", "trades", "R3")
-    subprocess.run([sys.executable, "chart_trades.py", "--csv", path, "--out", out], check=False, capture_output=True)
+    with timing.stage("trade charts"):
+        subprocess.run([sys.executable, "chart_trades.py", "--csv", path, "--out", out], check=False, capture_output=True)
     print("charts ->", out)
     return defs, prep, ridge
 
 
 def winners_report(T, defs, prep, ridge, periods=("dev", "test")):
     import analyze_winners as aw
-    parts = []
-    for period in periods:
-        s, rank = selected(T, "R3", period, defs, prep, ridge)
-        parts.append(select_trades(s, 5, rank))
-    R = pd.concat(parts, ignore_index=True)
-    R["winner"], R["big"], R["monster"] = R["ret"] > 0, R["ret"] >= 0.10, R["ret"] >= 0.25
-    aw.build_report(R, out_dir=os.path.join("reports", "ranked_R3"), title="Winning-trade analysis: ranked strategy R3 (score >= 3, OTC excluded)")
+    with timing.stage("select winning trades"):
+        parts = []
+        for period in periods:
+            s, rank = selected(T, "R3", period, defs, prep, ridge)
+            parts.append(select_trades(s, 5, rank))
+        R = pd.concat(parts, ignore_index=True)
+        R["winner"], R["big"], R["monster"] = R["ret"] > 0, R["ret"] >= 0.10, R["ret"] >= 0.25
+    with timing.stage("analyze_winners.build_report"):
+        aw.build_report(R, out_dir=os.path.join("reports", "ranked_R3"), title="Winning-trade analysis: ranked strategy R3 (score >= 3, OTC excluded)")
 
 
 def summary_cases():
@@ -222,12 +232,18 @@ def partition_cases(T, labs=None, cases=None):
     cases = cases or summary_cases()
     out = {}
     for lab in labs or cases:
-        areas, a_areas = case_areas(lab)
-        A = nested_bias_A(T, lab, cases)["bias"] if a_areas else None
-        for period in ("dev", "test"):
-            sel, days, rank, universe = case_selection(T, lab, period, cases, return_pools=True)
-            out[(lab, period)] = P.run_partition(sel, days, rank, pool=sel, universe=universe,
-                                                  areas=areas, A=A, A_areas=a_areas, oos=period == "test")
+        with timing.stage("partition strategy"):
+            areas, a_areas = case_areas(lab)
+            if a_areas:
+                with timing.stage("nested bias"):
+                    A = nested_bias_A(T, lab, cases)["bias"]
+            else:
+                A = None
+            for period in ("dev", "test"):
+                with timing.stage("partition period"):
+                    sel, days, rank, universe = case_selection(T, lab, period, cases, return_pools=True)
+                    out[(lab, period)] = P.run_partition(sel, days, rank, pool=sel, universe=universe,
+                                                          areas=areas, A=A, A_areas=a_areas, oos=period == "test")
     return out
 
 
@@ -288,7 +304,9 @@ def summary_table(T):
     if i < 0:
         i = txt.find("### Summary: previous top strategies")
     open(path, "w", encoding="utf-8").write((txt[:i] if i >= 0 else txt + nl) + section)
-    print(section)
+    from src.framework import report
+    report.section("Partition summary")
+    report.table(df.reset_index(), title="Partition summary")
 
 
 def main():

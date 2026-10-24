@@ -18,10 +18,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from src.utils import timing
 
 ROOT = Path(__file__).resolve().parents[2]
 PIT_DIR = ROOT / "data" / "pit"
 PRICE = ["open", "high", "low", "close"]
+MINUTE_COLUMNS = ["timestamp", "symbol", "open", "high", "low", "close", "volume", "trade_count", "vwap"]
 MIN_ALIAS_VOLUME = 10_000  # penny/SPAC names print identical 100-share bars by coincidence
 DEV_TRADES = ROOT / "results" / "pit_trades_atr_pivot_lb13_pm_target25_v2.csv"
 TEST_TRADES = ROOT / "results" / "holdout" / "pit_trades_atr_pivot_lb13_pm_target25_v2.csv"
@@ -66,6 +68,21 @@ def dedupe_on(df, keys):
     return df.drop_duplicates(keys, keep="last")
 
 
+def empty_minute_frame():
+    """Typed empty minute schema used when a fetch returns no bars."""
+    return pd.DataFrame({
+        "timestamp": pd.Series([], dtype="datetime64[ns, America/New_York]"),
+        "symbol": pd.Series([], dtype="object"),
+        "open": pd.Series([], dtype="float64"),
+        "high": pd.Series([], dtype="float64"),
+        "low": pd.Series([], dtype="float64"),
+        "close": pd.Series([], dtype="float64"),
+        "volume": pd.Series([], dtype="float64"),
+        "trade_count": pd.Series([], dtype="float64"),
+        "vwap": pd.Series([], dtype="float64"),
+    })
+
+
 def alias_mask(bars):
     """True for rows (date, symbol, OHLCV) repeating an alphabetically earlier symbol's bar on the same date."""
     b = bars[bars["volume"] >= MIN_ALIAS_VOLUME].sort_values("symbol", kind="stable")
@@ -101,10 +118,15 @@ def clean_minute(m):
 
 def load_minute(root=PIT_DIR / "alpaca_minute", symbols=None):
     """All minute files concatenated, duplicate (symbol, timestamp) bars (overlapping day files) dropped."""
-    m = pd.concat([pd.read_parquet(f) for f in sorted(glob.glob(str(Path(root) / "*.parquet")))], ignore_index=True)
-    if symbols is not None:
-        m = m[m["symbol"].isin(set(symbols))]
-    return dedupe_on(m, ["symbol", "timestamp"]).reset_index(drop=True)
+    with timing.stage("minute parquet read"):
+        frames = [pd.read_parquet(f) for f in sorted(glob.glob(str(Path(root) / "*.parquet")))]
+        frames = [frame for frame in frames if len(frame)]
+    with timing.stage("minute concat/filter"):
+        m = pd.concat(frames, ignore_index=True) if frames else empty_minute_frame()
+        if symbols is not None:
+            m = m[m["symbol"].isin(set(symbols))]
+    with timing.stage("minute dedupe"):
+        return dedupe_on(m, ["symbol", "timestamp"]).reset_index(drop=True)
 
 
 def clean_daily(df):

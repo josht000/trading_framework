@@ -317,6 +317,16 @@ RESULTS_TAG=lb13 LOOKBACK_BARS=273 python main.py
 PROFILE=1 RESULTS_TAG=lb13 LOOKBACK_BARS=273 python main.py
 ```
 
+## Running a study
+
+Run the switchable ATR-pivot study with:
+
+```bash
+python run.py --strategy atr_pivot [--config configs/atr_pivot.yaml] [--stages trades,table,rank,charts,partition] [--test] [--rebuild] [--profile]
+```
+
+Stages default to the complete study. `--test` scores the locked period, `--rebuild` refreshes cached tables, `--rebuild-cache` rebuilds the data cache, `DATA_CACHE=0` bypasses it, and `--profile` enables the timing cProfile dump. The framework lives under `src/framework/`; to add a strategy, add `configs/<name>.yaml`, implement a thin adapter under `strategies/<name>/`, register it with `@register`, implement the five `Strategy` operations, and add focused tests. The legacy `main.py`, `rank_test.py`, `rank_final.py`, and `scripts/partition_report.py` entrypoints remain supported.
+
 Fill model: entry builds the position over 15:55-15:59 and exits sell bar by bar, each taking at most `PARTICIPATION` of that minute's volume at the bar close moved against us by the slippage. Portfolio: equal weight over the day's top N trades, fully invested overnight, compounding. Per-trade CSVs go to `results/pit_trades_atr_pivot_<variant>.csv` (with entry-time features such as `sig_day_ret`, `atr_pct`, `range_pct` and path columns `ah45_*`, `pm_last`, `open_ret`).
 
 ### Account model ($5,000) and entry-filter research

@@ -23,7 +23,14 @@ from analyze_winners import prepare
 from explore import FILTERS
 from src.backtest import features_extra as fx
 from src.backtest import ranking as rk
-from src.backtest.pit_metrics import select_trades, simulate_account
+from src.backtest.pit_metrics import (
+    prepare_account_data,
+    select_rows_for_scores,
+    simulate_account_selected_py,
+    select_trades,
+    simulate_account,
+)
+from src.backtest.numba_kernels import numba_enabled
 from src.data.market_cap import merge_market_cap
 from src.utils import timing
 
@@ -49,16 +56,27 @@ STRATS = {  # existing top strategies: entry filters on the base pm_target25_v2 
 
 def build_table(rebuild=False):
     if os.path.exists(TABLE) and not rebuild:
-        return merge_market_cap(pd.read_parquet(TABLE))
-    T = prepare()
-    cand = pd.read_parquet(os.path.join("data", "pit", "candidates.parquet"))
-    T = fx.add_edgar(T)
-    T = fx.add_news_since_close(T)
-    T = fx.add_movers(T)
-    T = fx.add_theme_heat(T, cand)
-    T = fx.add_otc(T)
-    T.to_parquet(TABLE, index=False)
-    return merge_market_cap(T)
+        with timing.stage("load ranked table"):
+            T = pd.read_parquet(TABLE)
+        with timing.stage("merge_market_cap"):
+            return merge_market_cap(T)
+    with timing.stage("prepare ranking inputs"):
+        T = prepare()
+    with timing.stage("load candidates"):
+        cand = pd.read_parquet(os.path.join("data", "pit", "candidates.parquet"))
+    for name, fn in (
+        ("features_extra.add_edgar", fx.add_edgar),
+        ("features_extra.add_news_since_close", fx.add_news_since_close),
+        ("features_extra.add_movers", fx.add_movers),
+        ("features_extra.add_theme_heat", lambda frame: fx.add_theme_heat(frame, cand)),
+        ("features_extra.add_otc", fx.add_otc),
+    ):
+        with timing.stage(name):
+            T = fn(T)
+    with timing.stage("write ranked table"):
+        T.to_parquet(TABLE, index=False)
+    with timing.stage("merge_market_cap"):
+        return merge_market_cap(T)
 
 
 def hygiene(T, level):
@@ -182,7 +200,7 @@ def dev_experiments(T, md):
     return res
 
 
-def weight_search(dev, n_iter, rng):
+def _weight_search_py(dev, n_iter, rng):
     """Random search of score weights x threshold on `dev` (train = first 60% of its days, validation = rest). Returns the draws table."""
     days = pd.bdate_range(dev["day"].min(), dev["day"].max())
     d_tr, d_va = day_split(days)
@@ -208,6 +226,49 @@ def weight_search(dev, n_iter, rng):
                      "train_maxDD%": a["maxDD%"], "val_trades": b["trades"] if b else 0, "val_sharpe": b["sharpe"] if b else np.nan,
                      "val_total%": b["total%"] if b else np.nan, "val_maxDD%": b["maxDD%"] if b else np.nan, "val_min$": b["min$"] if b else np.nan})
     return pd.DataFrame(rows)
+
+
+def _weight_search_numba(dev, n_iter, rng):
+    days = pd.bdate_range(dev["day"].min(), dev["day"].max())
+    d_tr, d_va = day_split(days)
+    tr, va = dev[dev["day"].isin(d_tr)], dev[dev["day"].isin(d_va)]
+    grid = {k: [0.0, 0.5, 1.0, 1.5, 2.0] for k in rk.COMPONENTS}
+    grid["delist_notice"] = [1.0, 2.0, 3.0]
+    grid["late_filing"] = [1.0, 1.5, 2.0]
+    ths = [0.0, 1.0, 2.0, 3.0]
+    comp_tr, comp_va = rk.components(tr), rk.components(va)
+    tr_data = prepare_account_data(tr, d_tr)
+    va_data = prepare_account_data(va, d_va)
+    rows = []
+    for i in range(n_iter):
+        w = {k: float(rng.choice(v)) for k, v in grid.items()}
+        th = float(rng.choice(ths))
+        s_tr = np.zeros(len(tr), dtype=float)
+        s_va = np.zeros(len(va), dtype=float)
+        for k in rk.COMPONENTS:
+            s_tr += w[k] * comp_tr[k].to_numpy(dtype=float)
+            s_va += w[k] * comp_va[k].to_numpy(dtype=float)
+        train_count = int((s_tr >= th).sum())
+        if train_count < 150:
+            continue
+        a = simulate_account_selected_py(select_rows_for_scores(tr_data, s_tr, th), d_tr)
+        val_count = int((s_va >= th).sum())
+        b = simulate_account_selected_py(select_rows_for_scores(va_data, s_va, th), d_va) if val_count >= 40 else None
+        rows.append({
+            "weights": json.dumps(w), "threshold": th,
+            "train_trades": a["trades"], "train_sharpe": a["sharpe"], "train_total%": a["total%"],
+            "train_maxDD%": a["maxDD%"],
+            "val_trades": b["trades"] if b else 0, "val_sharpe": b["sharpe"] if b else np.nan,
+            "val_total%": b["total%"] if b else np.nan, "val_maxDD%": b["maxDD%"] if b else np.nan,
+            "val_min$": b["min$"] if b else np.nan,
+        })
+    return pd.DataFrame(rows)
+
+
+def weight_search(dev, n_iter, rng):
+    if numba_enabled():
+        return _weight_search_numba(dev, n_iter, rng)
+    return _weight_search_py(dev, n_iter, rng)
 
 
 def pick_weights(df):
@@ -357,6 +418,38 @@ def final_test(T, best_w, best_th, md):
     return rows
 
 
+def run_experiments(T, iters=700, final=False):
+    md = ["# Trade ranking experiments (dev set)\n"]
+    wpath = os.path.join("results", "ranking_weights.json")
+    if final:
+        cfg = json.load(open(wpath))
+        with timing.stage("final_test"):
+            final_test(T, cfg["weights"], cfg["threshold"], md)
+        with timing.stage("write report"):
+            from src.framework import report
+            report.section("Locked test report")
+            report.table(pd.DataFrame([{"test trades": len(T[T["period"] == "test"]), "report": "console-only"}]))
+        return
+    md.append(f"{len(T[T['period'] == 'dev'])} dev trades (pm_target25_v2 exits, 13-month atr_pivot); score components: {', '.join(rk.COMPONENTS)}; "
+              f"default weights {rk.DEFAULT_WEIGHTS}. OTC tickers flagged: {int(T['is_otc'].sum())} trades; trades with EDGAR data: {100 * T['e_has_data'].mean():.0f}%.\n")
+    with timing.stage("dev_experiments"):
+        dev_experiments(T, md)
+    with timing.stage("tune_weights"):
+        best_w, best_th, corr = tune_weights(T, md, iters)
+    with timing.stage("ridge_experiment"):
+        ridge_experiment(T, md)
+    with timing.stage("final_dev_table"):
+        final_dev_table(T, best_w, best_th, md)
+    path = os.path.join("reports", "ranking_report.md")
+    with timing.stage("write report"):
+        open(path, "w", encoding="utf-8").write("\n".join(md))
+        from src.framework import report
+        report.section("Ranking report")
+        report.table(pd.DataFrame([{"dev trades": len(T[T["period"] == "dev"]), "report": path}]))
+        print("wrote", path)
+    return T
+
+
 def main():
     timing.install("rank_test")
     ap = argparse.ArgumentParser()
@@ -367,30 +460,7 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     with timing.stage("build_table"):
         T = build_table(a.rebuild)
-    md = ["# Trade ranking experiments (dev set)\n"]
-    wpath = os.path.join("results", "ranking_weights.json")
-    if a.final:
-        cfg = json.load(open(wpath))
-        with timing.stage("final_test"):
-            final_test(T, cfg["weights"], cfg["threshold"], md)
-        with timing.stage("write report"):
-            print("\n".join(md))
-        return
-    md.append(f"{len(T[T['period'] == 'dev'])} dev trades (pm_target25_v2 exits, 13-month atr_pivot); score components: {', '.join(rk.COMPONENTS)}; "
-              f"default weights {rk.DEFAULT_WEIGHTS}. OTC tickers flagged: {int(T['is_otc'].sum())} trades; trades with EDGAR data: {100 * T['e_has_data'].mean():.0f}%.\n")
-    with timing.stage("dev_experiments"):
-        dev_experiments(T, md)
-    with timing.stage("tune_weights"):
-        best_w, best_th, corr = tune_weights(T, md, a.iters)
-    with timing.stage("ridge_experiment"):
-        ridge_experiment(T, md)
-    with timing.stage("final_dev_table"):
-        final_dev_table(T, best_w, best_th, md)
-    path = os.path.join("reports", "ranking_report.md")
-    with timing.stage("write report"):
-        open(path, "w", encoding="utf-8").write("\n".join(md))
-        print("\n".join(md))
-        print("wrote", path)
+    run_experiments(T, a.iters, a.final)
 
 
 if __name__ == "__main__":

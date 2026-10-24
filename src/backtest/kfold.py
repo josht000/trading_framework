@@ -14,6 +14,7 @@ import pandas as pd
 
 from src.backtest import partition
 from src.backtest.pit_metrics import select_trades
+from src.utils import timing
 
 
 def chronological_folds(days, k=5):
@@ -37,6 +38,7 @@ def poisson_binomial_tail(probabilities, observed):
     return float(dp[max(0, int(observed)):].sum())
 
 
+@timing.timed("fold metrics")
 def _fold_metrics(trades, fold_days, rank, pool, max_pos, frac, n_draws, seed):
     result = partition.partition(
         trades, fold_days, pool=pool, rank=rank, bias={"value": 0.0, "src": "fixed k-fold"},
@@ -80,17 +82,18 @@ def _fold_metrics(trades, fold_days, rank, pool, max_pos, frac, n_draws, seed):
 def kfold_stability(trades, days, rank="rel_vol", pool=None, k=5, max_pos=5, frac=.2,
                     n_draws=2000, seed=20261102, label="", tuned=False):
     """Return fold rows and a summary for one fixed configuration and period."""
-    t = trades.copy()
-    if "day" not in t:
-        t["day"] = pd.to_datetime(t["entry_time"].astype(str).str[:10])
-    else:
-        t["day"] = pd.to_datetime(t["day"]).dt.normalize()
-    p = pool.copy() if pool is not None else t.copy()
-    if "day" not in p:
-        p["day"] = pd.to_datetime(p["entry_time"].astype(str).str[:10])
-    else:
-        p["day"] = pd.to_datetime(p["day"]).dt.normalize()
-    folds = chronological_folds(days, k)
+    with timing.stage("prepare kfold folds"):
+        t = trades.copy()
+        if "day" not in t:
+            t["day"] = pd.to_datetime(t["entry_time"].astype(str).str[:10])
+        else:
+            t["day"] = pd.to_datetime(t["day"]).dt.normalize()
+        p = pool.copy() if pool is not None else t.copy()
+        if "day" not in p:
+            p["day"] = pd.to_datetime(p["entry_time"].astype(str).str[:10])
+        else:
+            p["day"] = pd.to_datetime(p["day"]).dt.normalize()
+        folds = chronological_folds(days, k)
     rows = []
     for i, fold in enumerate(folds, 1):
         m = t["day"].isin(fold)
@@ -98,28 +101,29 @@ def kfold_stability(trades, days, rank="rel_vol", pool=None, k=5, max_pos=5, fra
         row = _fold_metrics(t[m], fold, rank, p[pm], max_pos, frac, n_draws, seed + i)
         row.update({"fold": i, "period": label})
         rows.append(row)
-    df = pd.DataFrame(rows)
-    totals = df["total_log"].to_numpy(float)
-    mean = float(np.mean(totals))
-    sd = float(np.std(totals, ddof=1)) if len(totals) > 1 else np.nan
-    observed = int(df["profitable"].sum())
-    p_tail = poisson_binomial_tail(df["p_random_profitable"], observed)
-    total = float(totals.sum())
-    best_i = int(np.argmax(totals))
-    without_best = total - totals[best_i]
-    summary = {
-        "setup": label, "period": label.split("|")[-1] if "|" in label else "",
-        "folds": k, "folds_profit": f"{observed}/{k}",
-        "folds_beat_random": f"{int(df['beats_random'].sum())}/{k}",
-        "fold_mean_log": mean, "fold_std_log": sd,
-        "fold_t": mean / (sd / sqrt(k)) if np.isfinite(sd) and sd > 0 else np.nan,
-        "min_fold_log": float(np.min(totals)), "max_fold_log": float(np.max(totals)),
-        "worst_fold": int(np.argmin(totals) + 1),
-        "best_fold_share": float(totals[best_i] / total) if total else np.nan,
-        "sign_with_best": int(np.sign(total)), "sign_without_best": int(np.sign(without_best)),
-        "kfold_p": p_tail, "observed_profitable": observed,
-        "tuned_dev": bool(tuned),
-    }
+    with timing.stage("kfold summary"):
+        df = pd.DataFrame(rows)
+        totals = df["total_log"].to_numpy(float)
+        mean = float(np.mean(totals))
+        sd = float(np.std(totals, ddof=1)) if len(totals) > 1 else np.nan
+        observed = int(df["profitable"].sum())
+        p_tail = poisson_binomial_tail(df["p_random_profitable"], observed)
+        total = float(totals.sum())
+        best_i = int(np.argmax(totals))
+        without_best = total - totals[best_i]
+        summary = {
+            "setup": label, "period": label.split("|")[-1] if "|" in label else "",
+            "folds": k, "folds_profit": f"{observed}/{k}",
+            "folds_beat_random": f"{int(df['beats_random'].sum())}/{k}",
+            "fold_mean_log": mean, "fold_std_log": sd,
+            "fold_t": mean / (sd / sqrt(k)) if np.isfinite(sd) and sd > 0 else np.nan,
+            "min_fold_log": float(np.min(totals)), "max_fold_log": float(np.max(totals)),
+            "worst_fold": int(np.argmin(totals) + 1),
+            "best_fold_share": float(totals[best_i] / total) if total else np.nan,
+            "sign_with_best": int(np.sign(total)), "sign_without_best": int(np.sign(without_best)),
+            "kfold_p": p_tail, "observed_profitable": observed,
+            "tuned_dev": bool(tuned),
+        }
     return df, summary
 
 

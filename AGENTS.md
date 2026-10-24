@@ -3,3 +3,5 @@
 - Windows python env is in C:\data\envs\trading_framework\Scripts\python.exe
 - DO NOT EVER USE THE SCHWAB API TO MAKE REAL TRADES! IT IS FOR DATA ONLY!
 - Every simulation report must include the partition test (trend, random-pick baseline, skill, bias, skill %) for dev and test.
+- Studies run via `python run.py --strategy <name>`.
+- New strategies must plug into `src/framework`, include the partition test and timing instrumentation, and store golden outputs under `reports/golden/`.

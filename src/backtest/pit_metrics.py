@@ -4,6 +4,11 @@ import numpy as np
 import pandas as pd
 
 from src.data.pit_integrity import dedupe_trades  # noqa: F401  (re-exported)
+from src.backtest.numba_kernels import numba_enabled, top_indices_sorted_days
+from src.utils import timing
+
+_NUMBA_WARMED = False
+_ACCOUNT_NUMBA_WARMED = False
 
 
 def daily_returns(t, max_pos=5, rank="rel_vol", sizing="full", all_days=None):
@@ -29,11 +34,107 @@ def daily_returns(t, max_pos=5, rank="rel_vol", sizing="full", all_days=None):
     return per_day.reindex(idx, fill_value=0.0)
 
 
-def select_trades(t, max_pos=5, rank="rel_vol"):
+def select_trades_py(t, max_pos=5, rank="rel_vol"):
     """The trades actually taken: de-duplicated, top `max_pos` per day by `rank` (descending)."""
     t = dedupe_trades(t).copy()
     t["day"] = pd.to_datetime(t["entry_time"].astype(str).str[:10])
     return t.sort_values(["day", rank], ascending=[True, False], kind="stable").groupby("day").head(max_pos)
+
+
+def select_trades(t, max_pos=5, rank="rel_vol"):
+    """The trades actually taken, with a deterministic NumPy/Numba selector when enabled."""
+    global _NUMBA_WARMED
+    if not numba_enabled() or len(t) == 0:
+        return select_trades_py(t, max_pos, rank)
+    work = dedupe_trades(t).copy()
+    work["day"] = pd.to_datetime(work["entry_time"].astype(str).str[:10])
+    codes, _ = pd.factorize(work["day"], sort=True)
+    ranks = pd.to_numeric(work[rank], errors="coerce").to_numpy(dtype=float)
+    order = np.argsort(codes, kind="stable")
+    if not _NUMBA_WARMED:
+        with timing.stage("numba compile/warmup"):
+            chosen = top_indices_sorted_days(codes[order], ranks[order], order.astype(np.int64), max_pos)
+        _NUMBA_WARMED = True
+    else:
+        chosen = top_indices_sorted_days(codes[order], ranks[order], order.astype(np.int64), max_pos)
+    return work.iloc[chosen]
+
+
+def prepare_account_data(t, all_days):
+    """Precompute stable day ordering and contiguous arrays for repeated account trials."""
+    work = dedupe_trades(t).copy()
+    work["day"] = pd.to_datetime(work["entry_time"].astype(str).str[:10])
+    day_values = pd.DatetimeIndex(all_days).normalize()
+    codes, _ = pd.factorize(work["day"], sort=True)
+    order = np.argsort(codes, kind="stable")
+    slots = np.searchsorted(day_values.values, work["day"].values.astype("datetime64[ns]"))
+    return {
+        "frame": work,
+        "order": order.astype(np.int64),
+        "day_codes": codes[order].astype(np.int64),
+        "day_slots": slots[order].astype(np.int64),
+        "returns": work["ret"].to_numpy(dtype=float)[order],
+        "n_days": len(day_values),
+    }
+
+
+def select_rows_for_scores(data, scores, threshold=0.0, max_pos=5):
+    """Select rows for a score trial using the same stable selector as select_trades."""
+    mask = np.asarray(scores >= threshold, dtype=bool)
+    order = data["order"]
+    keep = mask[order]
+    day_codes = data["day_codes"][keep]
+    ranks = np.asarray(scores[order][keep], dtype=float)
+    positions = np.arange(len(day_codes), dtype=np.int64)
+    chosen = top_indices_sorted_days(day_codes, ranks, positions, max_pos)
+    selected_ordered = order[keep][chosen]
+    return data["frame"].iloc[selected_ordered]
+
+
+def simulate_account_selected_py(sel, all_days, start=5000.0, base_frac=0.20, boost_frac=0.25, boost=None):
+    """Reference account metrics after selection; preserves pandas operation order."""
+    sel = sel.copy()
+    idx = all_days
+    sel["frac"] = np.where(boost(sel) if boost is not None else False, boost_frac, base_frac)
+    day_ret = (sel["frac"] * sel["ret"]).groupby(sel["day"]).sum().reindex(idx, fill_value=0.0)
+    gross = sel.groupby("day")["frac"].sum().reindex(idx, fill_value=0.0)
+    equity = start * (1 + day_ret).cumprod()
+    eq0 = pd.concat([pd.Series([start]), equity.reset_index(drop=True)], ignore_index=True)
+    dd = float((eq0 / eq0.cummax() - 1).min())
+    neg = (day_ret < 0).astype(int)
+    streak = neg.groupby((neg != neg.shift()).cumsum()).cumsum().max()
+    sd = day_ret.std()
+    r = sel["ret"]
+    return {
+        "trades": len(sel), "win%": 100 * (r > 0).mean(), "mean%": 100 * r.mean(),
+        "PF": r[r > 0].sum() / abs(r[r <= 0].sum()) if (r <= 0).any() else float("inf"),
+        "final$": float(equity.iloc[-1]), "total%": 100 * (equity.iloc[-1] / start - 1), "maxDD%": 100 * dd,
+        "min$": float(eq0.min()), "worst_day%": 100 * float(day_ret.min()),
+        "worst_trade%": 100 * float(r.min()), "loss_streak_days": int(streak),
+        "avg_gross": float(gross[gross > 0].mean()) if (gross > 0).any() else 0.0,
+        "sharpe": day_ret.mean() / sd * np.sqrt(252) if sd > 0 else float("nan"),
+    }
+
+
+def account_trial_stats_fast(data, scores, threshold, max_pos=5, start=5000.0, frac=0.20):
+    """Numba account metrics for one score/threshold trial."""
+    global _ACCOUNT_NUMBA_WARMED
+    mask = np.asarray(scores >= threshold, dtype=bool)
+    order = data["order"]
+    keep = mask[order]
+    day_codes = data["day_codes"][keep]
+    day_slots = data["day_slots"][keep]
+    returns = data["returns"][keep]
+    ranks = np.asarray(scores[order][keep], dtype=float)
+    if not _ACCOUNT_NUMBA_WARMED:
+        with timing.stage("numba compile/warmup"):
+            values = account_trial_stats(day_codes, ranks, returns, day_slots, data["n_days"], max_pos, start, frac)
+        _ACCOUNT_NUMBA_WARMED = True
+    else:
+        values = account_trial_stats(day_codes, ranks, returns, day_slots, data["n_days"], max_pos, start, frac)
+    keys = ("trades", "win%", "mean%", "PF", "final$", "total%", "maxDD%", "min$", "worst_day%",
+            "worst_trade%", "loss_streak_days", "avg_gross", "sharpe")
+    return dict(zip(keys, values))
 
 
 def simulate_account(t, start=5000.0, base_frac=0.20, boost_frac=0.25, max_pos=5, rank="rel_vol",

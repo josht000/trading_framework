@@ -40,24 +40,33 @@ def compute(T, names):
     defs = None
     res = {}
     for n in names:
-        if n in LABEL:
-            r = RF.partition_cases(T, [LABEL[n]], cases)
-            for per in ("dev", "test"):
-                res[(n, per)] = r[(LABEL[n], per)]
-                sel, days, rank, universe = RF.case_selection(T, LABEL[n], per, cases, return_pools=True)
-                kr, ks = K.kfold_stability(sel, days, rank=rank, pool=sel, label=f"{n}|{per}")
-                K.write_kfold(kr, ks, OUT, n, per)
-        else:
-            defs, prep, ridge = defs or RF.strategies(T)
-            for per in ("dev", "test"):
-                s, rank = RF.selected(T, n, per, defs, prep, ridge)
-                days = pd.bdate_range(T[T["period"] == per]["day"].min(), T[T["period"] == per]["day"].max())
-                base = T[T["period"] == per]
-                universe = base[RF.hygiene(base, 1)]
-                res[(n, per)] = P.run_partition(s, days, rank, pool=s, universe=universe, areas=["signal", "exit", "entry_filters", "ranking"] if n in ("R2", "R3", "RIDGE", "S1+R2") else ["signal", "exit"],
-                                                oos=per == "test")
-                kr, ks = K.kfold_stability(s, days, rank=rank, pool=s, label=f"{n}|{per}", tuned=n.endswith("+tuned"))
-                K.write_kfold(kr, ks, OUT, n.replace("+", "_"), per)
+        with timing.stage("compute strategy"):
+            if n in LABEL:
+                r = RF.partition_cases(T, [LABEL[n]], cases)
+                for per in ("dev", "test"):
+                    res[(n, per)] = r[(LABEL[n], per)]
+                    with timing.stage("case selection"):
+                        sel, days, rank, universe = RF.case_selection(T, LABEL[n], per, cases, return_pools=True)
+                    with timing.stage("kfold stability"):
+                        kr, ks = K.kfold_stability(sel, days, rank=rank, pool=sel, label=f"{n}|{per}")
+                    with timing.stage("write kfold"):
+                        K.write_kfold(kr, ks, OUT, n, per)
+            else:
+                if defs is None:
+                    with timing.stage("build strategy definitions"):
+                        defs, prep, ridge = RF.strategies(T)
+                for per in ("dev", "test"):
+                    with timing.stage("case selection"):
+                        s, rank = RF.selected(T, n, per, defs, prep, ridge)
+                        days = pd.bdate_range(T[T["period"] == per]["day"].min(), T[T["period"] == per]["day"].max())
+                        base = T[T["period"] == per]
+                        universe = base[RF.hygiene(base, 1)]
+                    res[(n, per)] = P.run_partition(s, days, rank, pool=s, universe=universe, areas=["signal", "exit", "entry_filters", "ranking"] if n in ("R2", "R3", "RIDGE", "S1+R2") else ["signal", "exit"],
+                                                    oos=per == "test")
+                    with timing.stage("kfold stability"):
+                        kr, ks = K.kfold_stability(s, days, rank=rank, pool=s, label=f"{n}|{per}", tuned=n.endswith("+tuned"))
+                    with timing.stage("write kfold"):
+                        K.write_kfold(kr, ks, OUT, n.replace("+", "_"), per)
     return res
 
 
@@ -114,7 +123,8 @@ def main():
             sel = apply_keys(t, a.keys)
         with timing.stage("compute"):
             res = {}
-            for per, m in (("dev", sel["day"] < "2026-06-16"), ("test", sel["day"] >= "2026-06-16")):
+            split = os.getenv("PARTITION_SPLIT_DATE", "2026-06-16")
+            for per, m in (("dev", sel["day"] < split), ("test", sel["day"] >= split)):
                 x = sel[m]
                 if len(x):
                     days = pd.bdate_range(x["day"].min(), x["day"].max())

@@ -27,7 +27,7 @@ import pandas as pd
 import requests
 from dotenv import load_dotenv
 
-from src.data.pit_integrity import clean_daily, clean_minute, dedupe_on, drop_daily_aliases  # noqa: F401
+from src.data.pit_integrity import clean_daily, clean_minute, dedupe_on, drop_daily_aliases, empty_minute_frame  # noqa: F401
 
 load_dotenv()
 
@@ -452,7 +452,7 @@ def fetch_alpaca_minute(cands, log=print):
         if len(old):
             df = pd.concat([old, df], ignore_index=True)
         df = clean_minute(df) if len(df) else df
-        _atomic_write(df if len(df) else pd.DataFrame(columns=["timestamp", "symbol"]), path)
+        _atomic_write(df if len(df) else empty_minute_frame(), path)
         if i % 20 == 0 or i == len(dates):
             log(f"  {i}/{len(dates)} dates (last {pd.Timestamp(d).date()}, {len(df)} rows)")
 

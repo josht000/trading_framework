@@ -20,6 +20,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(__file__))
 from src.backtest.market_regime import attach_regime
 from src.backtest.pit_metrics import dedupe_trades
+from src.utils import timing
 
 TAG = "lb13"
 VARIANT = "pm_target25_v2"
@@ -51,17 +52,19 @@ SECTOR_MAP = {  # yfinance sector -> SimFin sector
 
 
 def load_trades():
-    parts = []
-    for holdout, period in ((False, "dev"), (True, "test")):
-        p = os.path.join("results", "holdout" if holdout else "", f"pit_trades_atr_pivot_{TAG}_{VARIANT}.csv")
-        t = pd.read_csv(p, keep_default_na=False, na_values=[""])
-        t["period"] = period
-        parts.append(t)
-    t = pd.concat(parts, ignore_index=True)
-    t["entry_time"] = t["entry_time"].astype(str)
-    t = dedupe_trades(t).copy()
-    t["day"] = pd.to_datetime(t["entry_time"].str[:10])
-    return attach_regime(t.reset_index(drop=True))
+    with timing.stage("load trade inputs"):
+        parts = []
+        for holdout, period in ((False, "dev"), (True, "test")):
+            p = os.path.join("results", "holdout" if holdout else "", f"pit_trades_atr_pivot_{TAG}_{VARIANT}.csv")
+            t = pd.read_csv(p, keep_default_na=False, na_values=[""])
+            t["period"] = period
+            parts.append(t)
+        t = pd.concat(parts, ignore_index=True)
+        t["entry_time"] = t["entry_time"].astype(str)
+        t = dedupe_trades(t).copy()
+        t["day"] = pd.to_datetime(t["entry_time"].str[:10])
+    with timing.stage("regime attach"):
+        return attach_regime(t.reset_index(drop=True))
 
 
 def add_market_overnight(t):
@@ -178,18 +181,24 @@ def add_news(t):
 def prepare(rebuild=False):
     os.makedirs(OUT, exist_ok=True)
     if os.path.exists(ENRICHED) and not rebuild:
-        return pd.read_parquet(ENRICHED)
+        with timing.stage("load enriched table"):
+            return pd.read_parquet(ENRICHED)
     t = load_trades()
-    t = add_market_overnight(t)
-    t = add_simfin(t)
-    t = add_yfinance(t)
-    t = add_news(t)
+    for name, fn in (
+        ("market loads", add_market_overnight),
+        ("simfin loads", add_simfin),
+        ("yfinance loads", add_yfinance),
+        ("news loads", add_news),
+    ):
+        with timing.stage(name):
+            t = fn(t)
     t["winner"] = t["ret"] > 0
     t["big"] = t["ret"] >= 0.10
     t["monster"] = t["ret"] >= 0.25
     t["week"] = t["day"].dt.to_period("W-FRI").dt.start_time
     t["month"] = t["day"].dt.to_period("M").dt.start_time
-    t.to_parquet(ENRICHED, index=False)
+    with timing.stage("write enriched table"):
+        t.to_parquet(ENRICHED, index=False)
     return t
 
 
