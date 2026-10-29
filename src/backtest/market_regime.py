@@ -1,6 +1,6 @@
 """
 Market-regime features for each signal date from SPY / IWM / QQQ (data/pit/market/, built by
-`build_pit_dataset.py market`). Everything is known at the 15:55 ET entry:
+`tools/build_pit_dataset.py market`). Everything is known at the 15:55 ET entry:
 
   <m>_day      price at 15:55 vs prior close
   <m>_ret5/20  prior-close return over the previous 5 / 20 sessions

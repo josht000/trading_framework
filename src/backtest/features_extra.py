@@ -2,12 +2,12 @@
 Extra point-in-time features for the trade-ranking work. Everything is computed from information published at or before the
 15:55 ET entry (windows end at the entry time, inclusive), except columns prefixed `post_` which look ahead and are for analysis only.
 
-  EDGAR (data/pit/edgar/filings.parquet, `build_pit_dataset.py edgar`): 8-K counts and item flags since the prior session
+  EDGAR (data/pit/edgar/filings.parquet, `tools/build_pit_dataset.py edgar`): 8-K counts and item flags since the prior session
       close, offering / dilution forms in the prior 10 days, distress items (3.01 delisting notice, 1.03 bankruptcy, 4.02 non-reliance,
       late-filing forms) in the prior 30 days.
   Benzinga (data/pit/news/news.parquet): company-specific / event headlines since the prior session close.
   Theme heat: how many other candidate breakouts share the company's description topic (NMF on descriptions) within the last 7 days.
-  OTC: ticker present in Massive's OTC / pink-sheet reference (`build_pit_dataset.py otc`) -> excluded from trading.
+  OTC: ticker present in Massive's OTC / pink-sheet reference (`tools/build_pit_dataset.py otc`) -> excluded from trading.
 """
 
 import os

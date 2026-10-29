@@ -42,8 +42,11 @@ def run(ctx, strategy, stages=None):
                 elif name == "charts":
                     strategy.charts(ctx, ctx.data["table"], ctx.data["setups"])
                 elif name == "partition":
-                    from src.framework.evaluate import evaluate
-                    ctx.data["evaluation"] = evaluate(ctx, ctx.data["table"], ctx.data["setups"])
+                    result = strategy.evaluate(ctx, ctx.data["table"], ctx.data["setups"]) if hasattr(strategy, "evaluate") else NotImplemented
+                    if result is NotImplemented:
+                        from src.framework.evaluate import evaluate
+                        result = evaluate(ctx, ctx.data["table"], ctx.data["setups"])
+                    ctx.data["evaluation"] = result
         except Exception as exc:
             raise RuntimeError(f"study stage {name!r} failed") from exc
     return ctx

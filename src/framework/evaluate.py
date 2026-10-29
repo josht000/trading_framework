@@ -27,7 +27,7 @@ def evaluate(ctx, trades_or_table, setups):
     """Run one complete evaluation and return account/k-fold/partition results."""
     table = trades_or_table
     if isinstance(table, pd.DataFrame) and {"period", "day", "is_otc"}.issubset(table.columns):
-        report = importlib.import_module("scripts.partition_report")
+        report = importlib.import_module("tools.partition_report")
         names = getattr(report, "DEFAULT", list(setups))
         results = report.compute(table, names)
         report.write(results)

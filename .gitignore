@@ -1,6 +1,8 @@
 cache/
+reports/
 results/
 data/charts/
+docs/schwab/
 .env
 .vscode/
 simfin/
@@ -10,7 +12,6 @@ predictions*.csv
 sweep_results.csv
 *.png
 *.csv
-
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -57,7 +57,7 @@ def _split_report(root: str, splits: Sequence[str], dataset_root: str, primary: 
             items[item["id"]] = item
     runs = [r for r in load_runs(root) if r.get("split") in splits and r["item"] in items]
     if not runs:
-        raise SystemExit(f"No runs for split(s) {', '.join(splits)}. Use `vlm_benchmark.py run --split` first.")
+        raise SystemExit(f"No runs for split(s) {', '.join(splits)}. Use `tools/vlm_benchmark.py run --split` first.")
     scores = score_runs(runs, items)
     board = leaderboard(scores, primary)
 
@@ -97,7 +97,7 @@ def build_report(root: str = DEFAULT_ROOT, primary: float = PRIMARY_TOL, render:
     items = {i["id"]: i for i in manifest["items"]}
     runs = [r for r in load_runs(root) if r["item"] in items and (r.get("split") or "manifest") == "manifest"]
     if not runs:
-        raise SystemExit("No manifest runs yet. Use `vlm_benchmark.py run` first.")
+        raise SystemExit("No manifest runs yet. Use `tools/vlm_benchmark.py run` first.")
     scores = score_runs(runs, items)
     board = leaderboard(scores, primary)
 

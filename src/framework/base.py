@@ -54,3 +54,7 @@ class Strategy(ABC):
     @abstractmethod
     def charts(self, ctx: RunContext, table: pd.DataFrame, setups: dict[str, Setup]):
         raise NotImplementedError
+
+    def evaluate(self, ctx: RunContext, table: pd.DataFrame, setups: dict[str, Setup]):
+        """Optional partition-stage override; return NotImplemented to use the generic evaluation."""
+        return NotImplemented

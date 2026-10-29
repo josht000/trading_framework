@@ -1,7 +1,8 @@
-- Always add scripts to the scripts folder
+- Layout: every strategy lives in `src/strategies/<name>/` (registered with `@register`, config in `configs/<name>.yaml`); one-off python tools live in `tools/`; one-off shell/batch scripts live in `scripts/`.
+- A study keeps ALL its outputs (trades, tables, partition CSV/report, figures, golden) in `results/<name>/`. Do not write study outputs to `reports/`.
 - Envs should always be repeatble so the requirements.txt and other install/setup scripts need to be kept up to date. Notify the user (me) if updates are needed here. 
 - Windows python env is in C:\data\envs\trading_framework\Scripts\python.exe
 - DO NOT EVER USE THE SCHWAB API TO MAKE REAL TRADES! IT IS FOR DATA ONLY!
 - Every simulation report must include the partition test (trend, random-pick baseline, skill, bias, skill %) for dev and test.
 - Studies run via `python run.py --strategy <name>`.
-- New strategies must plug into `src/framework`, include the partition test and timing instrumentation, and store golden outputs under `reports/golden/`.
+- New strategies must plug into `src/framework`, include the partition test and timing instrumentation, and store golden outputs under `results/<name>/golden/`.

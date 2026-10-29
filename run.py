@@ -18,13 +18,14 @@ def main(argv=None):
     parser.add_argument("--rebuild", action="store_true")
     parser.add_argument("--rebuild-cache", action="store_true")
     parser.add_argument("--profile", action="store_true")
+    parser.add_argument("--data-dir", help="folder of daily-bar parquet files (overrides data_dir in the strategy config)")
     args = parser.parse_args(argv)
 
     if args.profile:
         os.environ["PROFILE"] = "1"
     if args.rebuild_cache:
         os.environ["DATA_CACHE_REBUILD"] = "1"
-    cfg = load_config(args.strategy, args.config)
+    cfg = load_config(args.strategy, args.config, cli={"data_dir": args.data_dir})
     for key, value in env_overrides(cfg).items():
         os.environ[key] = value
     timing.install("run")

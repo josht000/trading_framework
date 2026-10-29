@@ -15,9 +15,9 @@ def register(name):
 def get_strategy(name):
     if name not in _REGISTRY:
         try:
-            import_module(f"strategies.{name}")
+            import_module(f"src.strategies.{name}")
         except ModuleNotFoundError as exc:
-            if exc.name != f"strategies.{name}":
+            if exc.name != f"src.strategies.{name}":
                 raise
     if name not in _REGISTRY:
         names = ", ".join(sorted(_REGISTRY)) or "(none)"

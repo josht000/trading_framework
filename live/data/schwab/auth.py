@@ -44,7 +44,7 @@ def load_settings() -> SchwabSettings:
 
 class SchwabAuth:
     """OAuth2 authorization-code flow. Access tokens last 30 minutes and are refreshed automatically; the refresh token dies 7 days
-    after the browser login, after which `scripts/schwab_login.py` must be run again."""
+    after the browser login, after which `tools/schwab_login.py` must be run again."""
 
     def __init__(self, settings: SchwabSettings, session=None, clock=time.time):
         self.s, self.http, self.clock = settings, session or requests.Session(), clock
@@ -88,7 +88,7 @@ class SchwabAuth:
     def _load(self):
         p = Path(self.s.token_path)
         if not p.exists():
-            raise TokenExpired(f"no Schwab token at {p}; run scripts/schwab_login.py")
+            raise TokenExpired(f"no Schwab token at {p}; run tools/schwab_login.py")
         self._tok = json.loads(p.read_text(encoding="utf-8"))
 
     def refresh_age_days(self) -> float:
@@ -105,7 +105,7 @@ class SchwabAuth:
             if self._tok is None:
                 self._load()
             if self.clock() - self._tok["creation_timestamp"] >= REFRESH_LIFETIME - REFRESH_MARGIN:
-                raise TokenExpired("Schwab refresh token is expired or about to expire; run scripts/schwab_login.py")
+                raise TokenExpired("Schwab refresh token is expired or about to expire; run tools/schwab_login.py")
             tok = self._tok["token"]
             if tok["expires_at"] - self.clock() < ACCESS_MARGIN:
                 new = self._post({"grant_type": "refresh_token", "refresh_token": tok["refresh_token"]})

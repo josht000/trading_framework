@@ -11,24 +11,27 @@ A Python-based automated trading framework for backtesting, simulating, and live
 - **Strategy Implementation**: Humbled Trader Bullish Overnight strategy
 - **Backtesting**: Vectorbt-based backtesting engine for fast strategy evaluation
 - **Multi-Symbol Support**: Backtest multiple symbols simultaneously
-- **Resistance Research**: Interactive detector tooling (`research_resistance.py`), a hand-labeled chart dataset (`data/resistance_dataset/`), and a browser labeling server (`label_charts.py`)
-- **VLM Benchmark**: Harness for scoring vision-language models on resistance-level reading (`vlm_benchmark.py`)
-- **Point-in-time dataset**: Survivorship-aware 2-year daily + candidate-day 1-minute dataset built from free sources (`build_pit_dataset.py`, `data/pit/`) — delisted names included
-- **Realistic PIT backtest**: Parallel per-symbol screening with a cached `atr_pivot` ladder, volume-limited fills, slippage, exit-rule variants, and a locked final test set (`main.py`, `iterate.py`)
+- **Resistance Research**: Interactive detector tooling (`tools/research_resistance.py`), a hand-labeled chart dataset (`data/resistance_dataset/`), and a browser labeling server (`tools/label_charts.py`)
+- **VLM Benchmark**: Harness for scoring vision-language models on resistance-level reading (`tools/vlm_benchmark.py`)
+- **Point-in-time dataset**: Survivorship-aware 2-year daily + candidate-day 1-minute dataset built from free sources (`tools/build_pit_dataset.py`, `data/pit/`) — delisted names included
+- **Realistic PIT backtest**: Parallel per-symbol screening with a cached `atr_pivot` ladder, volume-limited fills, slippage, exit-rule variants, and a locked final test set (`main.py`, `tools/iterate.py`)
 
 ## Architecture
 
 ```
 trading_framework/
 ├── main.py                   # Backtest entry point (point-in-time mode by default when data/pit exists)
-├── build_pit_dataset.py      # Build data/pit: reference, daily bars, candidates, candidate-day minute bars
-├── iterate.py                # Offline strategy iteration on per-trade tables (dev set) + one-shot test-set scoring
-├── chart_trades.py           # Best/worst trade charts: daily + 5-min with VWAP, atr_pivot levels, entry/exit
-├── research_resistance.py    # Detector research CLI (ladder/chart/eval/labels/pick/config)
-├── eval_pivot_resistance.py  # Score a detector on a resistance_dataset split
-├── sweep_resistance.py       # Param-sweep detectors on train/val, save best scores
-├── label_charts.py           # Browser labeling server for dataset charts
-├── vlm_benchmark.py          # VLM benchmark CLI (prepare/models/run/report)
+├── run.py                    # Study runner: python run.py --strategy <name> [--data-dir ...]
+├── tools/                    # One-off python tools (data builds, research CLIs, diagnostics): python tools/<name>.py
+│   build_pit_dataset.py      # Build data/pit: reference, daily bars, candidates, candidate-day minute bars
+│   iterate.py                # Offline strategy iteration on per-trade tables (dev set) + one-shot test-set scoring
+│   chart_trades.py           # Best/worst trade charts: daily + 5-min with VWAP, atr_pivot levels, entry/exit
+│   research_resistance.py    # Detector research CLI (ladder/chart/eval/labels/pick/config)
+│   eval_pivot_resistance.py  # Score a detector on a resistance_dataset split
+│   sweep_resistance.py       # Param-sweep detectors on train/val, save best scores
+│   label_charts.py           # Browser labeling server for dataset charts
+│   vlm_benchmark.py          # VLM benchmark CLI (prepare/models/run/report)
+├── scripts/                  # One-off shell/batch scripts (.sh/.bat)
 ├── src/
 │   ├── data/                 # Data ingestion modules
 │   │   ├── alpaca_client.py    # Alpaca API client (daily/minute bars)
@@ -44,14 +47,14 @@ trading_framework/
 │   │   ├── cluster_levels.py   # ZigZag / rolling-extreme pivots + agglomerative clustering
 │   │   ├── sr_finder.py        # Ports of albertsl's finder: deriv extrema, MeanShift, pivots
 │   │   └── volume_profile.py   # Volume-at-price high-volume-node detector
-│   ├── strategies/           # Trading strategies
+│   ├── strategies/           # All strategies (one package per study, registered with @register)
 │   │   └── humbled_bullish_overnight.py
 │   ├── backtest/             # Backtesting
 │   │   ├── engine.py           # vectorbt engine (symbol-list mode)
 │   │   ├── pit_runner.py       # PIT per-symbol worker: signals, fill model, exit variants, features; ladder cache
 │   │   ├── exit_variants.py    # Named exit-rule specs (after-hours stop/target, pre-market target, ...)
 │   │   └── pit_metrics.py      # Portfolio metrics, de-duplication of renamed tickers, sizing modes
-│   ├── research/             # Research tooling behind research_resistance.py
+│   ├── research/             # Research tooling behind tools/research_resistance.py
 │   │   ├── chart_levels.py     # Interactive plotly level charts
 │   │   ├── chart_png.py        # Static matplotlib PNG renderer (VLM packets)
 │   │   ├── config_io.py        # Detector configs as editable JSON
@@ -234,11 +237,11 @@ Breakout resistance has two methods (`RESISTANCE_METHOD`, default `atr_pivot` in
 
 ## Point-in-time dataset (`data/pit/`, gitignored)
 
-A fixed ticker list is survivor-biased, so PIT mode screens every symbol that was tradable on each date, including ones later delisted. Built by `build_pit_dataset.py` (all steps resumable):
+A fixed ticker list is survivor-biased, so PIT mode screens every symbol that was tradable on each date, including ones later delisted. Built by `tools/build_pit_dataset.py` (all steps resumable):
 
 | step | command | output |
 |---|---|---|
-| ticker reference | `python build_pit_dataset.py reference` | `reference.parquet`: Massive reference for every stock ticker, active and inactive, with `delisted_utc`, `type`, `list_date`. Free plan; ~12.5 s per call (5 calls/min) |
+| ticker reference | `python tools/build_pit_dataset.py reference` | `reference.parquet`: Massive reference for every stock ticker, active and inactive, with `delisted_utc`, `type`, `list_date`. Free plan; ~12.5 s per call (5 calls/min) |
 | daily bars | `... alpaca-daily` | `alpaca_daily/part_*.parquet`: split-adjusted SIP daily bars for every ticker listed any time since 2024-09-01 (types such as warrants, rights, units, ETFs, funds, preferred dropped). Alpaca returns bars for delisted tickers up to their last trading day |
 | other sources | `... massive`, `... mp` | `massive_daily/DATE.parquet` (grouped daily; free window ~2 years, slow) and `mp_daily/DATE.parquet` (MarketParquet free sample, last 365 days). Used only to fill gaps / cross-check |
 | merge | `... build` | `daily_pit.parquet`: `date, symbol, open, high, low, close, volume, trade_count, vwap, src, type, primary_exchange, delisted_utc` (Alpaca first, then Massive, then MarketParquet) |
@@ -247,7 +250,7 @@ A fixed ticker list is survivor-biased, so PIT mode screens every symbol that wa
 | prefilter | `... candidates` | `candidates.parquet` (`date, symbol`): daily-only screen (price $2-$20, 20d avg volume >= 500k, volume >= 2x average, close and open above prior close, rolling-20 high **or** `atr_pivot` breakout) |
 | minute bars | `... alpaca-minute` | `alpaca_minute/DATE.parquet`: 1-minute SIP bars (incl. extended hours) for the candidate symbols of that date, signal session plus next session. `timestamp` is America/New_York |
 | checks | `... validate` | integrity checks first (exits 1 on failure), then `report.txt`: coverage, cross-source agreement, known delistings, yfinance cross-check |
-| integrity | `... check` | `src/data/pit_integrity.py` (`validate_pit_data()` returns a report dict; also run after `candidates` / `alpaca-minute` / `build`, and at the start of `scripts/exit_rerun_v2.py` and `scripts/exit_campaign.py`): no duplicate (symbol, timestamp) / (symbol, date), no ticker-change twins among candidates, monotonic in-session timestamps, sane prices, and window cache vs trade table consistency. Day files overlap by design (signal day + next session), so loaders use `load_minute` / drop duplicate timestamps. `scripts/repair_pit_data.py` cleans existing files (backs up to `data/pit/_backup_dedupe_<ts>/`), `scripts/build_exit_windows.py` rebuilds the exit window cache |
+| integrity | `... check` | `src/data/pit_integrity.py` (`validate_pit_data()` returns a report dict; also run after `candidates` / `alpaca-minute` / `build`, and at the start of `tools/exit_rerun_v2.py` and `tools/exit_campaign.py`): no duplicate (symbol, timestamp) / (symbol, date), no ticker-change twins among candidates, monotonic in-session timestamps, sane prices, and window cache vs trade table consistency. Day files overlap by design (signal day + next session), so loaders use `load_minute` / drop duplicate timestamps. `tools/repair_pit_data.py` cleans existing files (backs up to `data/pit/_backup_dedupe_<ts>/`), `tools/build_exit_windows.py` rebuilds the exit window cache |
 
 Notes and caveats:
 
@@ -262,7 +265,7 @@ Notes and caveats:
 
 `src/backtest/exit_sim.py` compares causal next-session exits on cached
 15:55-to-11:00 minute windows without re-running entries.  The resumable
-campaign runner is `scripts/exit_campaign.py`; it reports both legacy
+campaign runner is `tools/exit_campaign.py`; it reports both legacy
 trigger-close fills and realistic next-bar-open fills, and keeps the locked
 test period out of parameter search.  The recommended experimental variant is
 `smart_exit_v1` in `src/backtest/exit_variants.py`; it is intentionally not
@@ -274,7 +277,7 @@ the default selected by `main.py`.
 view for each dev and locked-test configuration.  It reports profitable and
 random-beating folds, fold-return t-statistics, best-fold concentration, and
 an exact Poisson-binomial luck tail from 2,000 same-pool random-pick draws per
-fold.  `scripts/partition_report.py` writes the fold CSV/Markdown inputs and
+fold.  `tools/partition_report.py` writes the fold CSV/Markdown inputs and
 figures under `reports/partition/`; `rank_final.py --summary` adds the compact
 fold columns to its summary tables.  Five folds have low statistical power,
 and dev folds for tuned configurations are not independent evidence.
@@ -285,13 +288,13 @@ its meaning depends on the selected random baseline. Bias-B is one pooled
 comparable-trial expected-maximum estimate with an effective trial count and
 is flagged when it exceeds the observed total.
 
-Hindsight oracle: `scripts/build_exit_oracle.py` writes `results/exit/oracle.parquet`
+Hindsight oracle: `tools/build_exit_oracle.py` writes `results/exit/oracle.parquet`
 (one row per window `trade_id`; every non-id column is prefixed `hindsight_`, so it must
 never be joined into entry features or rankings) and `oracle_meta.json` (sha256 of
 `windows.npz` / `windows_index.parquet`, params, git commit).  It is derived from the
 window cache and kept out of `data/pit`.  `build_exit_oracle.py --check` exits 1 if the
 table is stale vs the current cache, and `validate_pit_data()` reports the same as a
-WARNING.  Dev-only analysis: `scripts/analyze_exit_oracle.py` (tables `reports/exit/tables/oracle_*.csv`).
+WARNING.  Dev-only analysis: `tools/analyze_exit_oracle.py` (tables `reports/exit/tables/oracle_*.csv`).
 
 `python main.py` uses `data/pit` automatically (`BACKTEST_MODE=symbols` forces the old symbol-list mode). Relevant environment variables:
 
@@ -304,8 +307,8 @@ WARNING.  Dev-only analysis: `scripts/analyze_exit_oracle.py` (tables `reports/e
 | `SIZE_USD` / `PARTICIPATION` | 1250 / 0.10 | position size per trade; max share of each 1-minute bar's volume |
 | `SLIP_RTH` / `SLIP_EXT` | 0.0015 / 0.004 | slippage per side, regular / extended hours (estimates, no quote data) |
 | `MIN_FILL` | 0.25 | entries filling less than this fraction by 15:59 are skipped |
-| `LOOKBACK_BARS` | 252 (detector default) | `atr_pivot` lookback in daily bars; 273 = 13 months. Regenerate candidates with `build_pit_dataset.py candidates --lookback-bars 273` |
-| `RESULTS_TAG` | none | suffix for result files (`pit_trades_atr_pivot_<tag>_<variant>.csv`); `explore.py`, `plot_portfolio.py` read the same variable |
+| `LOOKBACK_BARS` | 252 (detector default) | `atr_pivot` lookback in daily bars; 273 = 13 months. Regenerate candidates with `tools/build_pit_dataset.py candidates --lookback-bars 273` |
+| `RESULTS_TAG` | none | suffix for result files (`pit_trades_atr_pivot_<tag>_<variant>.csv`); `explore.py`, `tools/plot_portfolio.py` read the same variable |
 | `BACKTEST_COMMISSION` | 0.001 | per side |
 | `BACKTEST_SET` | `dev` | `dev`, `test`, or `all` (see evaluation protocol) |
 | `MAX_POSITIONS_PER_DAY` | 5 | portfolio keeps the top N trades per day by relative volume |
@@ -325,7 +328,15 @@ Run the switchable ATR-pivot study with:
 python run.py --strategy atr_pivot [--config configs/atr_pivot.yaml] [--stages trades,table,rank,charts,partition] [--test] [--rebuild] [--profile]
 ```
 
-Stages default to the complete study. `--test` scores the locked period, `--rebuild` refreshes cached tables, `--rebuild-cache` rebuilds the data cache, `DATA_CACHE=0` bypasses it, and `--profile` enables the timing cProfile dump. The framework lives under `src/framework/`; to add a strategy, add `configs/<name>.yaml`, implement a thin adapter under `strategies/<name>/`, register it with `@register`, implement the five `Strategy` operations, and add focused tests. The legacy `main.py`, `rank_test.py`, `rank_final.py`, and `scripts/partition_report.py` entrypoints remain supported.
+Stages default to the complete study. `--test` scores the locked period, `--rebuild` refreshes cached tables, `--rebuild-cache` rebuilds the data cache, `DATA_CACHE=0` bypasses it, and `--profile` enables the timing cProfile dump. The framework lives under `src/framework/`; to add a strategy, add `configs/<name>.yaml`, implement a thin adapter under `src/strategies/<name>/`, register it with `@register`, implement the five `Strategy` operations, and add focused tests. The legacy `main.py`, `rank_test.py`, `rank_final.py`, and `tools/partition_report.py` entrypoints remain supported.
+
+### S075 Stock-vs-Sector Residual Reversal (daily bars)
+
+```bash
+python run.py --strategy s075_residual_reversal --data-dir data/cache/daily_10years
+```
+
+`--data-dir` (folder of `<SYM>_1Day_split.parquet` files) overrides `data_dir` in `configs/s075_residual_reversal.yaml`. Outputs: `trades_{close,next_open}.csv`, `trade_summary.csv`, `partition_{dev,test}.csv`, `partition_report.md`, `equity.png` and `partition.png`, all in the one folder `results/s075_residual_reversal/`. Golden copies live in `results/s075_residual_reversal/golden/` (rebuild with `tools/make_golden_s075.py`, verify with `tools/check_golden.py --manifest results/s075_residual_reversal/golden/MANIFEST.json`). The partition test uses the daily adapter `src/framework/daily_partition.py` (trend = equal-weight tradable-universe return, since the folder has no index ETFs).
 
 Fill model: entry builds the position over 15:55-15:59 and exits sell bar by bar, each taking at most `PARTICIPATION` of that minute's volume at the bar close moved against us by the slippage. Portfolio: equal weight over the day's top N trades, fully invested overnight, compounding. Per-trade CSVs go to `results/pit_trades_atr_pivot_<variant>.csv` (with entry-time features such as `sig_day_ret`, `atr_pct`, `range_pct` and path columns `ah45_*`, `pm_last`, `open_ret`).
 
@@ -334,16 +345,16 @@ Fill model: entry builds the position over 15:55-15:59 and exits sell bar by bar
 - Account: $5,000 start, at most 5 overnight positions, 20% of equity ($1,000) per trade, optionally 25% ($1,250) for high-conviction trades (5 x 25% = 1.25x gross, i.e. a little margin). Day-trade note: an after-hours exit on the entry day is a day trade, so a margin account under $25,000 is limited by the pattern-day-trader rule (4 per 5 days).
 - Objective is now "stay alive, higher hit rate": hit rate, profit factor, lowest balance, max drawdown, worst day, longest losing-day streak (`simulate_account` in `pit_metrics.py`).
 - `python explore.py` tests entry filters on the dev set (SPY/IWM/QQQ regime, stock vs 200 SMA / 9 / 20 EMA, news and dilution flags) with split-half columns; `--export NAME` writes the executed trades of a named strategy, `--test NAME` scores it once on the locked test set.
-- `python chart_trades.py --csv ... --out ...`: best/worst trade charts with daily 9 EMA (gray), 20 EMA (blue), 200 SMA (gold, labelled R/S relative to price), `atr_pivot` levels, 5-minute bars with purple session VWAP, entry/exit markers, and news headlines.
-- `python plot_portfolio.py NAME [--with-test]`: equity vs base, SPY and IWM, drawdown, daily P&L, rolling hit rate.
+- `python tools/chart_trades.py --csv ... --out ...`: best/worst trade charts with daily 9 EMA (gray), 20 EMA (blue), 200 SMA (gold, labelled R/S relative to price), `atr_pivot` levels, 5-minute bars with purple session VWAP, entry/exit markers, and news headlines.
+- `python tools/plot_portfolio.py NAME [--with-test]`: equity vs base, SPY and IWM, drawdown, daily P&L, rolling hit rate.
 - Trade ranking: `src/backtest/ranking.py` scores each candidate from components known at 15:55 (headroom to resistance, low float, price vs 200 SMA, IWM/SPY direction, company news, EDGAR 8-K positives, dilution/distress filings, theme heat). `RESULTS_TAG=lb13 python rank_test.py` runs the dev experiments (hygiene filters, thresholds, ablation, scalings as raw / integer -5..5 / normalized 0..1, sizing, random-search weight tuning, monthly walk-forward ridge weights) and writes `reports/ranking_report.md`; `python rank_final.py --test` scores the locked test period once, `--charts` writes the executed trades, portfolio plot, trade charts (`data/charts/trades/R3_*`) and a winning-trades report for R3 (`reports/ranked_R3/`). Extra features come from `src/backtest/features_extra.py`.
-- EDGAR and OTC data: `build_pit_dataset.py edgar` (SEC submissions: 8-K item codes, 424B/S-3 offering forms, NT 10-K/10-Q late filings; set `EDGAR_USER_AGENT="Name email"`) and `build_pit_dataset.py otc` (Massive OTC / pink-sheet tickers, excluded from trading).
-- Winning-trade report: `python fetch_enrichment.py` (yfinance sector, float, short interest, descriptions -> `data/pit/enrichment/`), then `RESULTS_TAG=lb13 python analyze_winners.py [--rebuild]` writes `reports/winning_trades_report.md` (+ `reports/figures`, `reports/tables`). Sections: profit concentration, timing clusters and regime change, earnings vs news vs themes, sectors and NMF topics, float and size, market link and hedge test, purged walk-forward gradient boosting, FDR rule mining, archetypes, event study, deflated Sharpe, dev vs test robustness. Code in `analyze_winners.py`, `winners_analysis.py`, `winners_models.py`.
+- EDGAR and OTC data: `tools/build_pit_dataset.py edgar` (SEC submissions: 8-K item codes, 424B/S-3 offering forms, NT 10-K/10-Q late filings; set `EDGAR_USER_AGENT="Name email"`) and `tools/build_pit_dataset.py otc` (Massive OTC / pink-sheet tickers, excluded from trading).
+- Winning-trade report: `python tools/fetch_enrichment.py` (yfinance sector, float, short interest, descriptions -> `data/pit/enrichment/`), then `RESULTS_TAG=lb13 python analyze_winners.py [--rebuild]` writes `reports/winning_trades_report.md` (+ `reports/figures`, `reports/tables`). Sections: profit concentration, timing clusters and regime change, earnings vs news vs themes, sectors and NMF topics, float and size, market link and hedge test, purged walk-forward gradient boosting, FDR rule mining, archetypes, event study, deflated Sharpe, dev vs test robustness. Code in `analyze_winners.py`, `winners_analysis.py`, `winners_models.py`.
 
 ### Evaluation protocol: dev set and locked final test set
 
 - The last 4 months of data (`TEST_MONTHS`, currently 2026-06-16 onward) are a final test set. `main.py` writes those trades to `results/holdout/` and never summarizes them unless `BACKTEST_SET=test|all`. All tuning uses the dev set only.
-- `python iterate.py` runs 12 iterations per base strategy on dev; `python iterate.py --test NAME,...` scores chosen specs on the test set. Benchmark the test set rarely and only with candidates already picked on dev.
+- `python tools/iterate.py` runs 12 iterations per base strategy on dev; `python tools/iterate.py --test NAME,...` scores chosen specs on the test set. Benchmark the test set rarely and only with candidates already picked on dev.
 - This is standard practice (a chronological holdout, not a random split, because returns are time-ordered). With ~250 trades over 61 days the test set is small and noisy, so treat it as a sanity check, not a precise estimate.
 - Caveat: v1, v2 and pm_target25 were first compared on the full two years before the holdout existed, so the test months are not pristine for those three. Anything built after the split is clean.
 - Dev set also gets a split-half check (`sharpe_h1/h2`, `dd_h1/h2` in `results/iterations_dev.csv`) to flag results that rely on one half of the data.
@@ -429,22 +440,22 @@ The framework uses vectorbt for fast vectorized backtesting:
 
 `src/screening/resistance.py` is an ATR-scaled pivot zone detector for support/resistance on daily bars. Pivots are clustered into zones (candle body top to wick high for swing highs, wick low to body bottom for swing lows), and each zone is reported as a single level: the highest price in it (`--band` keeps the full range instead). A pivot is usable only `pivot_right` bars after it forms, so levels at bar k never depend on later bars. Role is relative to price: zones above are resistance, zones below are support, and a zone price is inside is `in_zone`. When nothing is above price the ladder is empty (blue sky).
 
-`src/screening/pivot_resistance.py` is a simpler, dependency-free alternative built from the `data/resistance_dataset` few-shot experiments: swing highs (+-4 bars) above the last close, merged within $0.10 keeping the exact top. About 0.67 F1 (+-$0.10 hit) on both train and test splits. Score it with `python eval_pivot_resistance.py data/resistance_dataset/test` (writes `predictions_pivot.csv`, then prints TP/FP/FN, precision, recall, F1, accuracy).
+`src/screening/pivot_resistance.py` is a simpler, dependency-free alternative built from the `data/resistance_dataset` few-shot experiments: swing highs (+-4 bars) above the last close, merged within $0.10 keeping the exact top. About 0.67 F1 (+-$0.10 hit) on both train and test splits. Score it with `python tools/eval_pivot_resistance.py data/resistance_dataset/test` (writes `predictions_pivot.csv`, then prints TP/FP/FN, precision, recall, F1, accuracy).
 
 `src/screening/cluster_levels.py` is a pure-numpy port of day0market/support_resistance (`pricelevels`): `zigzag` runs ZigZag `peak_valley_pivots` over the highs (or closes), `raw_price` takes bars equal to the centered rolling max, and both cluster the candidate prices with AgglomerativeClustering into levels.
 
 `src/screening/sr_finder.py` ports the implemented parts of albertsl/support-resistance_trading-bot's `support_resistance_finder.py` (upstream is a 2018 sketch — `_pivot_points` and the trendline methods are `pass`; trendlines are skipped since the dataset labels horizontal levels): `deriv_extrema` finds local maxima where the (optionally Butterworth-smoothed) series' gradient crosses, `volume_levels` takes low-slope + high-volume bars, `meanshift` clusters the price series with `estimate_bandwidth` and emits band edges, and `floor_pivots` computes classic/camarilla/fibonacci pivot-point formulas over a lookback.
 
-`eval_pivot_resistance.py` scores any of the detectors on a split: `--detector pivot|atr_pivot|zigzag|raw_price|volume_profile|deriv_extrema|volume_levels|meanshift|floor_pivots`, with config fields overridable via repeated `--set key=value` (e.g. `--detector zigzag --set peak_percent_delta=2 --set series=close`).
+`tools/eval_pivot_resistance.py` scores any of the detectors on a split: `--detector pivot|atr_pivot|zigzag|raw_price|volume_profile|deriv_extrema|volume_levels|meanshift|floor_pivots`, with config fields overridable via repeated `--set key=value` (e.g. `--detector zigzag --set peak_percent_delta=2 --set series=close`).
 
-`sweep_resistance.py` grid-searches all five detector families over the train+val splits (`--tune`), prints a per-family leaderboard ranked by combined F1, writes the full table to `data/resistance_dataset/sweep_results.csv`, and saves each family's best config the usual way: `predictions_<detector>.csv` + `eval_results_<detector>.txt` (score.py output) in every split. Last sweep (3318 configs, 9 families): pivot kept its defaults (pivot_bars=4, merge_tol=0.10) at 0.710 train+val F1; zigzag (delta=3%, $0.10 merge) 0.694, raw_price (5-bar rolling max, $0.10 merge) 0.685 and deriv_extrema (unsmoothed sign-cross maxima, $0.10 merge) 0.667 are close behind — everything that works prefers a ~$0.10 merge, matching the scoring tolerance; atr_pivot's best (`pivot_left=3 pivot_right=3 min_prominence_atr=0.5 merge_atr=0.3 include_ranges=false`) reached 0.632 and improved test F1 from 0.574 to 0.656; meanshift landed mid-pack (0.575), while volume_levels (0.530), floor_pivots (0.362) and volume_profile (0.123) trail — formulaic and volume-node levels don't match the labelled swing-high style.
+`tools/sweep_resistance.py` grid-searches all five detector families over the train+val splits (`--tune`), prints a per-family leaderboard ranked by combined F1, writes the full table to `data/resistance_dataset/sweep_results.csv`, and saves each family's best config the usual way: `predictions_<detector>.csv` + `eval_results_<detector>.txt` (score.py output) in every split. Last sweep (3318 configs, 9 families): pivot kept its defaults (pivot_bars=4, merge_tol=0.10) at 0.710 train+val F1; zigzag (delta=3%, $0.10 merge) 0.694, raw_price (5-bar rolling max, $0.10 merge) 0.685 and deriv_extrema (unsmoothed sign-cross maxima, $0.10 merge) 0.667 are close behind — everything that works prefers a ~$0.10 merge, matching the scoring tolerance; atr_pivot's best (`pivot_left=3 pivot_right=3 min_prominence_atr=0.5 merge_atr=0.3 include_ranges=false`) reached 0.632 and improved test F1 from 0.574 to 0.656; meanshift landed mid-pack (0.575), while volume_levels (0.530), floor_pivots (0.362) and volume_profile (0.123) trail — formulaic and volume-node levels don't match the labelled swing-high style.
 
 Research CLI (run with the `trading_framework` interpreter):
 
 ```bat
-python research_resistance.py ladder SOFI 2024-03-05
-python research_resistance.py chart  SOFI 2024-03-05 --forward 12
-python research_resistance.py eval   SOFI,PLUG,OPEN --start 2023-01-01 --end 2025-06-30 --split 2024-07-01
+python tools/research_resistance.py ladder SOFI 2024-03-05
+python tools/research_resistance.py chart  SOFI 2024-03-05 --forward 12
+python tools/research_resistance.py eval   SOFI,PLUG,OPEN --start 2023-01-01 --end 2025-06-30 --split 2024-07-01
 ```
 
 - `chart` writes an interactive candlestick + volume HTML to `data/charts/` with each level drawn as a line from where it formed (red resistance, green support; thicker means a higher strength score). Bars after the as-of date are drawn faded so you can see what happened without it affecting the levels.
@@ -474,24 +485,24 @@ Dataset helpers (run from the dataset directory or the repo root):
 - `data/resistance_dataset/highs.py` — pivot-high price lookup helper: `python highs.py <price_csv> [window]` prints the last close and every bar high above it that is the max of ±`window` bars; it does not choose levels
 - `data/resistance_dataset/prompt.txt` — the few-shot task description the dataset was built for
 - `data/resistance_dataset/val/evaluate.py` — earlier quick scorer hardcoded to `test/labels.csv`; superseded by `score.py`
-- `eval_pivot_resistance.py` — run a detector on a split and score it: `python eval_pivot_resistance.py data/resistance_dataset/test --detector atr_pivot` (writes `predictions_<detector>.csv`, then prints TP/FP/FN, precision, recall, F1, accuracy)
-- `sweep_resistance.py` — grid-search detector params on train+val and save the best configs' scores: `python sweep_resistance.py` (`--detector` for one family, `--no-save` for leaderboard only)
-- `label_charts.py` — interactive browser labeling server for a chart folder: `python label_charts.py --dir data/resistance_dataset/<split> --port 8765`. Left-click adds a level line, right-click deletes the nearest, arrow keys switch charts, and Save writes `<dir>/labels.csv`
+- `tools/eval_pivot_resistance.py` — run a detector on a split and score it: `python tools/eval_pivot_resistance.py data/resistance_dataset/test --detector atr_pivot` (writes `predictions_<detector>.csv`, then prints TP/FP/FN, precision, recall, F1, accuracy)
+- `tools/sweep_resistance.py` — grid-search detector params on train+val and save the best configs' scores: `python tools/sweep_resistance.py` (`--detector` for one family, `--no-save` for leaderboard only)
+- `tools/label_charts.py` — interactive browser labeling server for a chart folder: `python tools/label_charts.py --dir data/resistance_dataset/<split> --port 8765`. Left-click adds a level line, right-click deletes the nearest, arrow keys switch charts, and Save writes `<dir>/labels.csv`
 
 ## VLM Benchmark (can a vision model read resistance levels?)
 
-`vlm_benchmark.py` benchmarks vision-language models against the human-labeled charts. Each packet is the blind chart PNG (no labels, no future bars) plus a CSV of the same daily OHLCV bars; your manual levels are the gold answer and are never sent to the model.
+`tools/vlm_benchmark.py` benchmarks vision-language models against the human-labeled charts. Each packet is the blind chart PNG (no labels, no future bars) plus a CSV of the same daily OHLCV bars; your manual levels are the gold answer and are never sent to the model.
 
 ```bat
-python vlm_benchmark.py prepare                 # PNGs with/without labels, OHLCV csvs, manifest -> data/vlm/
-python vlm_benchmark.py models                  # table of VLMs: prices, vision signals, est. cost
-python vlm_benchmark.py models --write          # also data/vlm/vlm_candidates.csv / .md
-python vlm_benchmark.py run --dry-run           # cost preview only; no keys, no network
-python vlm_benchmark.py run --first-pass --repeats 3 --budget 5
-python vlm_benchmark.py run --split val --shots train --prompt learned   # dev: val charts, train worked examples
-python vlm_benchmark.py run --split test --shots train,val --prompt learned  # final: test charts, train+val examples
-python vlm_benchmark.py report                  # leaderboard.csv + results/review/index.html
-python vlm_benchmark.py report --split val,test # score dataset splits instead of the manifest
+python tools/vlm_benchmark.py prepare                 # PNGs with/without labels, OHLCV csvs, manifest -> data/vlm/
+python tools/vlm_benchmark.py models                  # table of VLMs: prices, vision signals, est. cost
+python tools/vlm_benchmark.py models --write          # also data/vlm/vlm_candidates.csv / .md
+python tools/vlm_benchmark.py run --dry-run           # cost preview only; no keys, no network
+python tools/vlm_benchmark.py run --first-pass --repeats 3 --budget 5
+python tools/vlm_benchmark.py run --split val --shots train --prompt learned   # dev: val charts, train worked examples
+python tools/vlm_benchmark.py run --split test --shots train,val --prompt learned  # final: test charts, train+val examples
+python tools/vlm_benchmark.py report                  # leaderboard.csv + results/review/index.html
+python tools/vlm_benchmark.py report --split val,test # score dataset splits instead of the manifest
 ```
 
 - **Keys:** `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` in `.env`. `--via openrouter` routes every model through OpenRouter so one key covers all vendors.
@@ -511,7 +522,7 @@ the full parameter table is `data/resistance_dataset/sweep_results.csv`.
 
 ### Rule-based detectors — test split
 
-Each row is the config picked by the train+val sweep (`sweep_resistance.py`,
+Each row is the config picked by the train+val sweep (`tools/sweep_resistance.py`,
 3,318 configs across 9 families), sorted by F1.
 
 | detector | TP | FP | FN | precision | recall | F1 | accuracy |
@@ -539,7 +550,7 @@ iterations are kept in `val/eval_results*.txt`.
 | skill, rescored | 70 | 44 | 20 | 0.614 | 0.778 | 0.686 | 0.522 |
 | v5 (skill) | 75 | 67 | 15 | 0.528 | 0.833 | 0.647 | 0.478 |
 
-The `vlm_benchmark.py` leaderboard uses its own metric — greedy matching within
+The `tools/vlm_benchmark.py` leaderboard uses its own metric — greedy matching within
 a multiple of ATR14, not $0.10 — so it is kept separate (full table:
 `data/vlm/results/leaderboard_*.csv`; `runs` = charts scored). Test split so far:
 
@@ -576,5 +587,5 @@ Covers the backtest engine, historical strategy screening, the resistance detect
 ## Utility scripts
 
 - `python -m http.server 8765 -d C:\data\trading\trading_framework\data\charts` — serve the generated HTML charts locally
-- `python label_charts.py --dir data/resistance_dataset/<split> --port 8765` — interactive chart labeling server (see above)
+- `python tools/label_charts.py --dir data/resistance_dataset/<split> --port 8765` — interactive chart labeling server (see above)
 - `data/vlm/gpt_6_astral/` — one-off VLM audit artifact: `thoughts.md` (detector rules + protocol notes) and `evaluate_run.py` (scores a predictions CSV with the dataset's matching rules)

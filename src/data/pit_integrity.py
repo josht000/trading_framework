@@ -211,7 +211,7 @@ def validate_pit_data(pit_dir=PIT_DIR, trades=True, windows=True, log=print, ses
             _check_windows(pd.concat([tt["dev"], tt["test"]], ignore_index=True), WINDOWS, errors, warnings, counts, add)
         if windows and WINDOWS.exists() and ORACLE.exists():
             for why in oracle_staleness():
-                add(warnings, "exit oracle table stale (rerun scripts/build_exit_oracle.py)", why, 1)
+                add(warnings, "exit oracle table stale (rerun tools/build_exit_oracle.py)", why, 1)
 
     ranked = ROOT / "reports" / "ranked_table.parquet"
     enrichment = pit_dir / "enrichment" / "massive_mcap.parquet"
