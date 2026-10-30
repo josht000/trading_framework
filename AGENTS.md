@@ -3,6 +3,8 @@
 - Envs should always be repeatble so the requirements.txt and other install/setup scripts need to be kept up to date. Notify the user (me) if updates are needed here. 
 - Windows python env is in C:\data\envs\trading_framework\Scripts\python.exe
 - DO NOT EVER USE THE SCHWAB API TO MAKE REAL TRADES! IT IS FOR DATA ONLY!
-- Every simulation report must include the partition test (trend, random-pick baseline, skill, bias, skill %) for dev and test.
+- Every simulation report must include the partition test (trend, random-pick baseline, skill, bias, skill %), sharpe ratio, profit factor, # trades, Win rate %, for dev and test.
 - Studies run via `python run.py --strategy <name>`.
 - New strategies must plug into `src/framework`, include the partition test and timing instrumentation, and store golden outputs under `results/<name>/golden/`.
+- One off tools should be placed in the tools/ directory but only if it's likely to be used again. If it's just to move specific files around or other trivial tasks, delete after use.
+- Strategy variants: put named overlays in the strategy yaml `variants:` block and run `python run.py --strategy <name> --variant a,b`; variant outputs are `results/<name>/<variant>__<file>`, and `results/<name>/variants_comparison.csv` tracks every variant tried (count them as trials; select on dev only, report test once).

@@ -55,14 +55,20 @@ def _coerce(value, template):
     return str(value)
 
 
-def load_config(strategy, path=None, env=None, cli=None):
-    """Load one strategy config, applying environment and CLI overrides."""
+def load_config(strategy, path=None, env=None, cli=None, variant=None):
+    """Load one strategy config: defaults < yaml < named `variants:` overlay < environment < CLI."""
     env = os.environ if env is None else env
     cli = {} if cli is None else {k: v for k, v in cli.items() if v is not None}
     path = Path(path or Path("configs") / f"{strategy}.yaml")
     yaml_cfg = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     cfg = dict(DEFAULTS)
     cfg.update(yaml_cfg)
+    if variant and variant != "baseline":
+        overlays = yaml_cfg.get("variants") or {}
+        if variant not in overlays:
+            raise ValueError(f"unknown variant {variant!r}; choose from baseline, {', '.join(overlays) or '(none defined)'}")
+        cfg.update(overlays[variant] or {})
+    cfg["variant"] = variant or "baseline"
     for key, default in DEFAULTS.items():
         env_key = key.upper()
         if env_key in env:
@@ -73,6 +79,8 @@ def load_config(strategy, path=None, env=None, cli=None):
         else:
             cfg[key] = value
     cfg["strategy"] = strategy
+    if variant and variant != "baseline":
+        cfg["results_tag"] = variant
     return cfg
 
 
@@ -80,7 +88,7 @@ def env_overrides(cfg):
     """Return config values in the environment names consumed by legacy code."""
     out = {}
     for key, value in cfg.items():
-        if key in {"strategy", "partition_split_date", "iters"} or value is None:
+        if key in {"strategy", "partition_split_date", "iters"} or value is None or isinstance(value, (dict, list)):
             continue
         env_key = key.upper()
         if isinstance(value, bool):

@@ -207,3 +207,67 @@ def test_pipeline_uses_strategy_evaluate_hook():
 
     ctx = run_pipeline(RunContext(cfg={}, paths={}, args=None, flags={}), Hooked(), ["partition"])
     assert ctx.data["evaluation"] == "custom"
+
+
+def test_new_components_default_to_baseline_and_work():
+    panel, sector_map = synthetic_panel(n_rows=400)
+    base = S.compute_signals(panel, sector_map, small_cfg())
+    explicit = S.compute_signals(panel, sector_map, small_cfg(signal_mode="raw", skip_days=0, regime_mode="none", min_abs_resid=0.0))
+    assert np.array_equal(base["signal"], explicit["signal"])
+    skipped = S.compute_signals(panel, sector_map, small_cfg(skip_days=2))
+    assert not skipped["signal"][:2].any()
+    assert skipped["signal"].sum() <= base["signal"].sum() + 1
+    nosma = S.compute_signals(panel, sector_map, small_cfg(sma_window=0))
+    assert nosma["signal"].sum() >= base["signal"].sum()
+    z = S.compute_signals(panel, sector_map, small_cfg(signal_mode="zscore"))
+    assert z["z"] is not None and z["signal"].any()
+    big = S.compute_signals(panel, sector_map, small_cfg(min_abs_resid=0.05))
+    assert (big["resid5"][big["signal"]] <= -0.05).all()
+
+
+def test_regime_block_and_exit_rules():
+    b = np.r_[np.zeros(30), np.full(5, -0.03), np.zeros(10)]
+    cfg = {"regime_mode": "ew_drawdown", "regime_window": 5, "regime_threshold": 0.10}
+    blocked = S.regime_block(b, cfg)
+    assert blocked[:30].sum() == 0 and blocked[34]
+    assert S.regime_block(b, {"regime_mode": "none"}) is None
+    close = [10, 10, 9, 9.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0]
+    resid = [np.nan, np.nan, -0.1] + [-0.1] * 7
+    sig = hand_sig(resid, [2], len(close))
+    stop = S.build_trades(hand_panel(close), sig, small_cfg(cost_bps_per_side=0.0, stop_loss=0.10), "close").iloc[0]
+    assert (stop.exit_reason, stop.exit_idx) == ("stop", 4)
+    fixed = S.build_trades(hand_panel(close), sig, small_cfg(cost_bps_per_side=0.0, exit_mode="fixed", fixed_hold=3), "close").iloc[0]
+    assert (fixed.exit_reason, fixed.exit_idx) == ("cap", 5)
+    tp = S.build_trades(hand_panel([10, 10, 9, 9.5, 10.0, 10, 10, 10, 10, 10]), sig, small_cfg(cost_bps_per_side=0.0, take_profit=0.08), "close").iloc[0]
+    assert (tp.exit_reason, tp.exit_idx) == ("target", 4)
+
+
+def test_variant_overlay_and_env_export(tmp_path):
+    from src.framework.config import env_overrides, load_config
+    path = tmp_path / "c.yaml"
+    path.write_text("a: 1\nvariants:\n  v1: {a: 2, exit_mode: fixed}\n", encoding="utf-8")
+    cfg = load_config("x", path, env={}, variant="v1")
+    assert (cfg["a"], cfg["exit_mode"], cfg["results_tag"], cfg["variant"]) == (2, "fixed", "v1", "v1")
+    base = load_config("x", path, env={})
+    assert base["a"] == 1 and base["variant"] == "baseline" and not base["results_tag"]
+    with pytest.raises(ValueError, match="unknown variant"):
+        load_config("x", path, env={}, variant="nope")
+    assert "VARIANTS" not in env_overrides(cfg)
+
+
+def test_run_py_variant_batch_writes_prefixed_files_and_one_png(tmp_path, monkeypatch):
+    data_dir = tmp_path / "bars"
+    sector_map = write_synthetic_dir(data_dir)
+    cfg = small_cfg(partition_split_date="2022-03-01", min_history=100, variants={"nosma": {"sma_window": 0}})
+    config = tmp_path / "s075.yaml"
+    config.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    import src.strategies.s075_residual_reversal.strategy as strat
+    monkeypatch.setattr(strat, "load_sector_map", lambda: sector_map)
+    monkeypatch.setenv("DATA_CACHE", "0")
+    monkeypatch.chdir(tmp_path)
+    run_module.main(["--strategy", "s075_residual_reversal", "--config", str(config), "--data-dir", str(data_dir), "--variant", "baseline,nosma"])
+    out = tmp_path / "results" / "s075_residual_reversal"
+    assert (out / "partition_dev.csv").exists() and (out / "nosma__partition_dev.csv").exists()
+    assert sorted(p.name for p in out.glob("*.png")) == ["nosma__summary.png", "summary.png"]
+    comparison = pd.read_csv(out / "variants_comparison.csv")
+    assert set(comparison["variant"]) == {"baseline", "nosma"} and "selection_haircut" in comparison

@@ -18,6 +18,7 @@ def main(argv=None):
     parser.add_argument("--rebuild", action="store_true")
     parser.add_argument("--rebuild-cache", action="store_true")
     parser.add_argument("--profile", action="store_true")
+    parser.add_argument("--variant", help="comma-separated names from the strategy config's variants: block (default: baseline)")
     parser.add_argument("--data-dir", help="folder of daily-bar parquet files (overrides data_dir in the strategy config)")
     args = parser.parse_args(argv)
 
@@ -25,20 +26,24 @@ def main(argv=None):
         os.environ["PROFILE"] = "1"
     if args.rebuild_cache:
         os.environ["DATA_CACHE_REBUILD"] = "1"
-    cfg = load_config(args.strategy, args.config, cli={"data_dir": args.data_dir})
-    for key, value in env_overrides(cfg).items():
-        os.environ[key] = value
     timing.install("run")
-    ctx = RunContext(
-        cfg=cfg,
-        paths={"root": os.path.abspath("."), "results": os.path.abspath("results"), "reports": os.path.abspath("reports")},
-        args=args,
-        flags={"test": args.test, "rebuild": args.rebuild, "rebuild_cache": args.rebuild_cache, "profile": args.profile},
-    )
-    with timing.stage("load strategy"):
-        strategy = get_strategy(args.strategy)
     stages = [x.strip() for x in args.stages.split(",") if x.strip()]
-    run(ctx, strategy, stages)
+    ctx = None
+    base_env = dict(os.environ)
+    for variant in [v.strip() for v in (args.variant or "").split(",") if v.strip()] or [None]:
+        cfg = load_config(args.strategy, args.config, env=base_env, cli={"data_dir": args.data_dir}, variant=variant)
+        for key, value in env_overrides(cfg).items():
+            os.environ[key] = value
+        ctx = RunContext(
+            cfg=cfg,
+            paths={"root": os.path.abspath("."), "results": os.path.abspath("results"), "reports": os.path.abspath("reports")},
+            args=args,
+            flags={"test": args.test, "rebuild": args.rebuild, "rebuild_cache": args.rebuild_cache, "profile": args.profile},
+        )
+        with timing.stage("load strategy"):
+            strategy = get_strategy(args.strategy)
+        with timing.stage(f"variant {cfg['variant']}"):
+            run(ctx, strategy, stages)
     return ctx
 
 

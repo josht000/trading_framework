@@ -8,7 +8,7 @@ import pandas as pd
 from src.backtest import partition as P
 from src.data.daily_panel import load_panel, load_sector_map
 from src.framework import daily_partition as DP
-from src.framework import report
+from src.framework import dashboard, report
 from src.framework.base import Setup, Strategy
 from src.framework.registry import register
 from src.utils import timing
@@ -28,6 +28,11 @@ def _out_dir(ctx):
     out = Path(ctx.paths.get("results", "results")) / NAME
     out.mkdir(parents=True, exist_ok=True)
     return out
+
+
+def _prefix(cfg):
+    """Variant runs write `<variant>__<file>` next to the baseline files (baseline has no prefix)."""
+    return f"{cfg['results_tag']}__" if cfg.get("results_tag") else ""
 
 
 def _fills(cfg):
@@ -50,8 +55,7 @@ def _state(ctx, rebuild=False):
     n_rows = len(panel["dates"])
     ret, tradable = sig["ret"], sig["tradable"]
     with timing.stage("benchmark"):
-        n_tradable = (tradable & ~np.isnan(ret)).sum(1)
-        b_day = np.where(tradable, np.nan_to_num(ret), 0.0).sum(1) / np.maximum(n_tradable, 1)
+        b_day = sig["b_day"]
         close_ff = pd.DataFrame(close).ffill().to_numpy()
     split = pd.Timestamp(cfg["partition_split_date"])
     first = int(np.argmax(tradable.any(1)))
@@ -103,6 +107,39 @@ def _md_table(frame, cols):
     return "\n".join(lines)
 
 
+def update_comparison(out, frame, cfg, state):
+    """Upsert this variant into variants_comparison.csv and add the cross-variant selection haircut (dev, per fill)."""
+    keep = ["trades", "total_log", "trend", "random_pick_pool", "bias", "skill", "skill_vs_pool", "skill_pct", "skill_p", "sharpe",
+            "cagr_pct", "max_dd_pct", "mean_ret_pct", "win_pct", "avg_hold", "avg_positions"]
+    rows = frame[["fill", "period"] + keep].copy()
+    rows.insert(0, "variant", cfg["variant"])
+    path = out / "variants_comparison.csv"
+    old = pd.read_csv(path) if path.exists() else pd.DataFrame()
+    if len(old):
+        old = old[old["variant"] != cfg["variant"]].drop(columns=[c for c in ("selection_haircut", "skill_after_haircut") if c in old])
+    table = pd.concat([old, rows], ignore_index=True)
+    dev_mask = state["masks"]["dev"]
+    daily = {}
+    for f in out.glob("*daily_returns.csv"):
+        name = f.name[: -len("daily_returns.csv")].rstrip("_") or "baseline"
+        d = pd.read_csv(f, parse_dates=["date"])
+        daily[name] = d[d["date"] < pd.Timestamp(cfg["partition_split_date"])]
+    table["selection_haircut"] = np.nan
+    for fill in _fills(cfg):
+        col = f"{fill}_r_day"
+        series = {k: np.log1p(v[col].to_numpy()) for k, v in daily.items() if col in v and len(v) == len(next(iter(daily.values())))}
+        if len(series) < 2:
+            continue
+        mat = np.vstack(list(series.values()))
+        corr = np.corrcoef(mat)
+        rho = float((corr.sum() - len(series)) / (len(series) * (len(series) - 1)))
+        n_eff = max(1.0, 1.0 + (len(series) - 1) * (1.0 - rho))
+        sd = float(mat.std(axis=1, ddof=1).mean() * np.sqrt(mat.shape[1]))
+        table.loc[(table["fill"] == fill) & (table["period"] == "dev"), "selection_haircut"] = P.expected_max_noise(sd, n_eff)
+    table["skill_after_haircut"] = np.where(table["period"] == "dev", table["skill"] - table["selection_haircut"].fillna(0.0), np.nan)
+    table.to_csv(path, index=False)
+
+
 @register(NAME)
 class S075ResidualReversal(Strategy):
     name = NAME
@@ -113,7 +150,7 @@ class S075ResidualReversal(Strategy):
         state = _state(ctx, bool(ctx.flags.get("rebuild_cache")))
         results_dir = _out_dir(ctx)
         for fill, trades in state["trades"].items():
-            trades.drop(columns=["sym_idx", "signal_idx", "entry_idx", "exit_idx"]).to_csv(results_dir / f"trades_{fill}.csv", index=False)
+            trades.drop(columns=["sym_idx", "signal_idx", "entry_idx", "exit_idx"]).to_csv(results_dir / f"{_prefix(ctx.cfg)}trades_{fill}.csv", index=False)
         return _table(state, ctx.cfg)
 
     def build_table(self, ctx, rebuild):
@@ -139,31 +176,14 @@ class S075ResidualReversal(Strategy):
                              **{f"exit_{k}": int(v) for k, v in t["exit_reason"].value_counts().items()}})
         summary = pd.DataFrame(rows)
         out = _out_dir(ctx)
-        summary.to_csv(out / "trade_summary.csv", index=False)
+        summary.to_csv(out / f"{_prefix(ctx.cfg)}trade_summary.csv", index=False)
         report.section("S075 trade summary (net of costs, research scale)")
         report.table(summary[SUMMARY_COLS].rename(columns={"mean_ret_pct": "mean%", "median_ret_pct": "med%", "win_pct": "win%", "avg_hold": "hold"}), floatfmt=".3f")
         return summary
 
     def charts(self, ctx, table, setups):
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-
-        state = _state(ctx)
-        dates = state["panel"]["dates"]
-        fig, ax = plt.subplots(figsize=(10, 4.5))
-        for fill, trades in state["trades"].items():
-            r_day, _ = _fill_account(state, ctx.cfg, fill)
-            ax.plot(dates[state["first_row"]:], np.cumsum(np.log1p(r_day))[state["first_row"]:], label=fill)
-        ax.axvline(dates[state["split_row"]] if state["split_row"] < len(dates) else dates[-1], color="#888888", ls="--", lw=0.8)
-        ax.set_ylabel("cumulative log return (research scale, net)")
-        ax.set_title("S075 residual reversal: equal-weight account (dev | test)")
-        ax.legend()
-        ax.grid(color="#eeeeee")
-        fig.tight_layout()
-        fig.savefig(_out_dir(ctx) / "equity.png", dpi=110)
-        plt.close(fig)
+        """The single dashboard PNG is written by evaluate() (it needs the partition results)."""
+        return None
 
     def evaluate(self, ctx, table, setups):
         state, cfg = _state(ctx), ctx.cfg
@@ -174,19 +194,22 @@ class S075ResidualReversal(Strategy):
         rho = float(np.corrcoef(logs)[0, 1]) if len(logs) > 1 else 0.0
         n_eff = max(1.0, 1.0 + (len(fills) - 1) * (1.0 - rho))
         note = f"{len(fills)} fill models, daily corr {rho:.2f}"
-        by_fill = {}
+        by_fill, series = {}, {}
         for fill in fills:
-            by_fill[fill], _ = DP.evaluate_fill(state["trades"][fill], _book(state, cfg, fill), state["masks"], sig["tradable"], sig["pool"],
+            by_fill[fill], series[fill] = DP.evaluate_fill(state["trades"][fill], _book(state, cfg, fill), state["masks"], sig["tradable"], sig["pool"],
                                                 n_eff, cfg, seed=int(cfg.get("seed", DP.SEED)), bias_note=note)
         frame = DP.results_frame(by_fill)
         out = _out_dir(ctx)
+        pre = _prefix(cfg)
         for period in ("dev", "test"):
-            frame[frame["period"] == period].drop(columns=["bias_src"]).to_csv(out / f"partition_{period}.csv", index=False)
-        DP.plot_partition(frame, out / "partition.png")
+            frame[frame["period"] == period].drop(columns=["bias_src"]).to_csv(out / f"{pre}partition_{period}.csv", index=False)
         dev = frame[frame["period"] == "dev"]
         P.log_trials(NAME, len(fills), per_trial_total_log=dev["total_log"].tolist(), days=int(state["masks"]["dev"].sum()),
-                     notes="fill models of the catalog baseline; no parameter search", source="s075 daily partition")
+                     notes=f"variant {cfg['variant']}: fill models; variant-level selection is tracked in variants_comparison.csv", source="s075 daily partition")
         self._write_report(out, frame, state, cfg)
+        self._daily_returns(out, state, series, cfg)
+        self._dashboard(out, frame, state, series, cfg)
+        update_comparison(out, frame, cfg, state)
         report.section("S075 partition test (log returns, research scale, net of costs)")
         short = {"period": "per", "trades": "n", "total_log": "total", "random_pick_universe": "rnd_univ", "random_pick_pool": "rnd_pool",
                  "skill_pct": "skill%", "skill_p": "p"}
@@ -195,11 +218,32 @@ class S075ResidualReversal(Strategy):
         return {"results": frame, "setups": setups}
 
     @staticmethod
+    def _daily_returns(out, state, series, cfg):
+        dates = state["panel"]["dates"]
+        data = {"date": dates, "b_day": state["b_day"]}
+        for fill, s in series.items():
+            data[f"{fill}_r_day"], data[f"{fill}_positions"] = s["r_day"], s["count"]
+        pd.DataFrame(data).iloc[state["first_row"]:].to_csv(out / f"{_prefix(cfg)}daily_returns.csv", index=False)
+
+    @staticmethod
+    def _dashboard(out, frame, state, series, cfg):
+        dates = state["panel"]["dates"]
+        overlay = (cfg.get("variants") or {}).get(cfg["variant"], {}) if cfg["variant"] != "baseline" else {}
+        caption = (f"variant={cfg['variant']}  overlay={overlay or 'none (catalog baseline)'}\n"
+                   f"universe top {cfg['universe_top_n']} liquid (peers top {cfg['peer_top_n']}, SimFin industry) | signal {cfg.get('signal_mode', 'raw')} "
+                   f"{cfg['resid_window']}d residual, decile {cfg['decile']}, SMA{cfg['sma_window']}, skip {cfg.get('skip_days', 0)} | exit {cfg.get('exit_mode', 'resid')} "
+                   f"cap {cfg['max_hold']} stop {cfg.get('stop_loss', 0)} target {cfg.get('take_profit', 0)} | regime {cfg.get('regime_mode', 'none')} | "
+                   f"{cfg['cost_bps_per_side']} bps/side | slots {cfg['book_slots']} | data {cfg['data_dir']} {dates[0].date()}..{dates[-1].date()}")
+        dashboard.daily_dashboard(out / f"{_prefix(cfg)}summary.png", f"S075 Stock-vs-Sector Residual Reversal: {cfg['variant']}", caption, dates, series, frame,
+                                  state["trades"], state["b_day"], state["first_row"], state["split_row"],
+                                  n_trials_note="Dev bias = selection haircut (fills); the cross-variant haircut is in variants_comparison.csv. Test bias = 0 by construction.")
+
+    @staticmethod
     def _write_report(out, frame, state, cfg):
         dates = state["panel"]["dates"]
         first, split = dates[state["first_row"]], dates[min(state["split_row"], len(dates) - 1)]
         lines = [
-            "# S075 Stock-vs-Sector Residual Reversal: partition report", "",
+            "# S075 Stock-vs-Sector Residual Reversal: partition report", ""] + ([f"- Variant: `{cfg['variant']}` overlay {(cfg.get('variants') or {}).get(cfg['variant'])}", ""] if cfg["variant"] != "baseline" else []) + [
             f"- Data: `{cfg['data_dir']}`; sessions {dates[0].date()} .. {dates[-1].date()}; evaluation starts {first.date()}.",
             f"- Split: dev < {split.date()} <= test (locked; no parameters tuned).",
             f"- Universe: top {cfg['universe_top_n']} by 60d median dollar volume (price >= {cfg['min_price']}, >= {cfg['min_history']} bars); "
@@ -212,4 +256,4 @@ class S075ResidualReversal(Strategy):
         for period in ("dev", "test"):
             lines += [f"## {period}", "", _md_table(frame[frame["period"] == period], ["fill"] + REPORT_COLS), ""]
             lines += [f"Bias source ({fill}): {src}" for fill, src in frame[frame["period"] == period][["fill", "bias_src"]].itertuples(index=False)] + [""]
-        (out / "partition_report.md").write_text("\n".join(lines), encoding="utf-8")
+        (out / f"{_prefix(cfg)}partition_report.md").write_text("\n".join(lines), encoding="utf-8")

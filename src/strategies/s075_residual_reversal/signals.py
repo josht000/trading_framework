@@ -54,6 +54,31 @@ def shift_down(a, k=1):
     return out
 
 
+def ew_returns(ret, tradable):
+    """Equal-weight mean daily return of the tradable universe (0 where nothing is tradable)."""
+    live = tradable & ~np.isnan(ret)
+    return np.where(live, np.nan_to_num(ret), 0.0).sum(1) / np.maximum(live.sum(1), 1)
+
+
+def regime_block(b_day, cfg):
+    """Rows (sessions) where new entries are blocked by the market-stress filter; None when the filter is off.
+
+    ew_drawdown: equal-weight universe return over `regime_window` sessions (through t) below -regime_threshold.
+    ew_vol: annualised stdev of the equal-weight universe daily return over `regime_window` above regime_threshold.
+    """
+    mode = cfg.get("regime_mode", "none")
+    if mode == "none":
+        return None
+    n, thr = int(cfg.get("regime_window", 20)), float(cfg["regime_threshold"])
+    if mode == "ew_drawdown":
+        window_ret = np.expm1(pd.Series(np.log1p(b_day)).rolling(n, min_periods=n).sum().to_numpy())
+        return window_ret < -thr
+    if mode == "ew_vol":
+        vol = pd.Series(b_day).rolling(n, min_periods=n).std().to_numpy() * np.sqrt(252)
+        return vol > thr
+    raise ValueError(f"unknown regime_mode {mode!r}")
+
+
 def compute_signals(panel, sector_map, cfg):
     """Return a dict of matrices: resid5, beta, tradable, pool, signal, sma_ok (all through-t information only)."""
     close, volume = panel["close"], panel["volume"]
@@ -80,17 +105,38 @@ def compute_signals(panel, sector_map, cfg):
         log_peer = np.log1p(peer)
         peer5 = np.expm1(pd.DataFrame(log_peer).rolling(h, min_periods=h).sum().to_numpy())
         resid5 = stock5 - beta * peer5
+    z = None
+    if cfg.get("signal_mode", "raw") == "zscore" or cfg.get("exit_mode", "resid") == "zscore":
+        with timing.stage("residual z-score"):
+            daily_resid = ret - beta * peer
+            sigma = shift_down(pd.DataFrame(daily_resid).rolling(int(cfg.get("z_window", 60)), min_periods=40).std().to_numpy())
+            with np.errstate(invalid="ignore", divide="ignore"):
+                z = resid5 / (sigma * np.sqrt(h))
+    score = z if cfg.get("signal_mode", "raw") == "zscore" else resid5
     with timing.stage("decile + sma filter"):
         sma_n = int(cfg["sma_window"])
-        sma = pd.DataFrame(close).rolling(sma_n, min_periods=sma_n).mean().to_numpy()
-        sma_ok = close > sma
-        eligible = tradable & ~np.isnan(resid5) & ~np.isnan(close)
+        if sma_n > 0:
+            sma = pd.DataFrame(close).rolling(sma_n, min_periods=sma_n).mean().to_numpy()
+            sma_ok = close > sma
+        else:
+            sma_ok = np.ones(close.shape, bool)
+        eligible = tradable & ~np.isnan(score) & ~np.isnan(close)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
-            cut = np.nanquantile(np.where(eligible, resid5, np.nan), float(cfg["decile"]), axis=1)
-        signal = eligible & (resid5 <= cut[:, None]) & sma_ok
+            cut = np.nanquantile(np.where(eligible, score, np.nan), float(cfg["decile"]), axis=1)
+        signal = eligible & (score <= cut[:, None]) & sma_ok
+        min_abs = float(cfg.get("min_abs_resid", 0.0))
+        if min_abs > 0:
+            signal = signal & (resid5 <= -min_abs)
         pool = eligible & sma_ok
-    return {"resid5": resid5, "beta": beta, "tradable": tradable, "pool": pool, "signal": signal, "ret": ret,
+        skip = int(cfg.get("skip_days", 0))
+        if skip > 0:
+            signal = np.vstack([np.zeros((skip, signal.shape[1]), bool), signal[:-skip]]) & eligible & sma_ok
+    b_day = ew_returns(ret, tradable)
+    block = regime_block(b_day, cfg)
+    if block is not None:
+        signal = signal & ~block[:, None]
+    return {"resid5": resid5, "z": z, "beta": beta, "tradable": tradable, "pool": pool, "signal": signal, "ret": ret, "b_day": b_day,
             "industry": industries.to_numpy(), "sector": sectors.to_numpy()}
 
 
@@ -100,13 +146,18 @@ def build_trades(panel, sig, cfg, fill):
     resid5, beta, signal = sig["resid5"], sig["beta"], sig["signal"]
     dates, symbols = panel["dates"], panel["symbols"]
     n_rows = len(dates)
-    max_hold = int(cfg["max_hold"])
+    exit_mode = cfg.get("exit_mode", "resid")
+    hold_cap = int(cfg.get("fixed_hold", 5)) if exit_mode == "fixed" else int(cfg["max_hold"])
+    stop, target = float(cfg.get("stop_loss", 0.0)), float(cfg.get("take_profit", 0.0))
+    exit_z = float(cfg.get("exit_z", 0.0))
+    zmat = sig.get("z")
     cost = float(cfg["cost_bps_per_side"]) / 1e4
     is_open = fill == "next_open"
     valid = ~np.isnan(close)
     rows = []
     for j in np.flatnonzero(signal.any(0)):
         cj, oj, rj, vj = close[:, j], open_[:, j], resid5[:, j], valid[:, j]
+        zj = zmat[:, j] if zmat is not None else rj
         last = int(np.flatnonzero(vj)[-1])
         t_prev = -1
         for t in np.flatnonzero(signal[:, j]):
@@ -116,22 +167,33 @@ def build_trades(panel, sig, cfg, fill):
             if entry > last or (is_open and np.isnan(oj[entry])):
                 continue
             entry_px = oj[entry] if is_open else cj[t]
-            reason, u = "cap", t + max_hold
-            for k in range(1, max_hold + 1):
+            reason, u = "cap", t + hold_cap
+            for k in range(1, hold_cap + 1):
                 u = t + k
                 if u > last:
                     reason, u = ("delisted" if last < n_rows - 1 else "censored"), last
                     break
-                if vj[u] and rj[u] > 0:
+                if not vj[u]:
+                    continue
+                if stop and cj[u] <= entry_px * (1 - stop):
+                    reason = "stop"
+                    break
+                if target and cj[u] >= entry_px * (1 + target):
+                    reason = "target"
+                    break
+                if exit_mode == "resid" and rj[u] > 0:
+                    reason = "resid"
+                    break
+                if exit_mode == "zscore" and zj[u] > exit_z:
                     reason = "resid"
                     break
             else:
-                u = t + max_hold
+                u = t + hold_cap
             while u > t and not vj[u]:
                 u -= 1
             decision = u
             exit_idx, exit_px = u, cj[u]
-            if is_open and reason in ("resid", "cap") and u + 1 <= last and not np.isnan(oj[u + 1]):
+            if is_open and reason not in ("delisted", "censored") and u + 1 <= last and not np.isnan(oj[u + 1]):
                 exit_idx, exit_px = u + 1, oj[u + 1]
             t_prev = decision
             if exit_idx < entry:

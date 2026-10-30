@@ -1,0 +1,59 @@
+data_dir: data/cache/daily_10years
+universe_top_n: 500
+peer_top_n: 1500
+min_price: 5.0
+min_history: 250
+min_peers: 5
+beta_window: 60
+beta_min_obs: 40
+resid_window: 5
+decile: 0.10
+sma_window: 200
+max_hold: 10
+cost_bps_per_side: 15.0
+fills: close,next_open
+partition_split_date: "2024-01-01"
+n_draws: 1000
+n_boot: 5000
+seed: 20261101
+book_slots: 50
+
+# ---- optional components (defaults = catalog baseline) --------------------------------------------
+signal_mode: raw          # raw | zscore (residual / idiosyncratic stdev through t-1, window z_window)
+z_window: 60
+min_abs_resid: 0.0       # require raw residual <= -this (e.g. 0.05) so gross move can pay the costs
+skip_days: 0              # act on the signal this many sessions late
+exit_mode: resid          # resid (5d residual > 0) | zscore (z > exit_z) | fixed (hold fixed_hold sessions)
+fixed_hold: 5
+exit_z: 0.0
+stop_loss: 0.0            # fraction below entry, close-based; 0 = off
+take_profit: 0.0          # fraction above entry, close-based; 0 = off
+regime_mode: none         # none | ew_drawdown | ew_vol: block new entries in market stress
+regime_window: 20
+regime_threshold: 0.10    # ew_drawdown: window return < -thr; ew_vol: annualised stdev > thr
+
+# Named variants: run with  python run.py --strategy s075_residual_reversal --variant NAME[,NAME2]
+# Each variant overlays only the keys listed; outputs are written as <variant>__<file> in results/s075_residual_reversal/.
+variants:
+  skip1: {skip_days: 1}
+  win3: {resid_window: 3}
+  win10: {resid_window: 10}
+  dec05: {decile: 0.05}
+  zscore: {signal_mode: zscore}
+  nosma: {sma_window: 0}
+  big5: {min_abs_resid: 0.05}
+  big8: {min_abs_resid: 0.08}
+  big10: {min_abs_resid: 0.10}
+  exit_z05: {exit_mode: zscore, exit_z: 0.5}
+  fixed5: {exit_mode: fixed, fixed_hold: 5}
+  fixed3: {exit_mode: fixed, fixed_hold: 3}
+  stop8: {stop_loss: 0.08}
+  cap5: {max_hold: 5}
+  ew_dd10: {regime_mode: ew_drawdown, regime_window: 20, regime_threshold: 0.10}
+  ew_vol30: {regime_mode: ew_vol, regime_window: 20, regime_threshold: 0.30}
+  # combinations of the levers that improved dev skill in the first batch (fewer, larger dislocations; hold for the overshoot)
+  big5_ez05: {min_abs_resid: 0.05, exit_mode: zscore, exit_z: 0.5}
+  big8_ez05: {min_abs_resid: 0.08, exit_mode: zscore, exit_z: 0.5}
+  big5_dec05: {min_abs_resid: 0.05, decile: 0.05}
+  # dev-selected winner of the 15-variant search (identical config to big10, whose outputs are the golden copy)
+  best: {min_abs_resid: 0.10}

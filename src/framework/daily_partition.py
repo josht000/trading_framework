@@ -200,33 +200,3 @@ def results_frame(results_by_fill):
         for period, res in by_period.items():
             rows.append({"fill": fill, "period": period, **res})
     return pd.DataFrame(rows)
-
-
-def plot_partition(frame, path):
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import os
-
-    fig, axes = plt.subplots(1, len(frame), figsize=(3.6 * len(frame) + 1, 4.6), squeeze=False)
-    for ax, (_, r) in zip(axes[0], frame.iterrows()):
-        pos = neg = 0.0
-        for name, value, color in (("Trend", r["trend"], "#4472c4"), ("Skill", r["skill"], "#70ad47"), ("Bias", r["bias"], "#d9534f")):
-            if not np.isfinite(value):
-                continue
-            base = pos if value >= 0 else neg
-            ax.bar(0, value, bottom=base, color=color, width=0.55, label=name)
-            pos, neg = (pos + value, neg) if value >= 0 else (pos, neg + value)
-        ax.plot([0], [r["total_log"]], "ko", ms=9, label="Total")
-        ax.axhline(0, color="#888888", lw=0.8)
-        ax.set_xticks([])
-        ax.set_ylabel("log return")
-        pct = r["skill_pct"]
-        ax.set_title((f"Skill = {100 * pct:.0f}% of Total" if np.isfinite(pct) else "Skill = n/a % of Total") + f"\n{r['fill']} | {r['period']}", fontsize=10)
-        ax.grid(axis="y", color="#eeeeee")
-    axes[0][0].legend(frameon=True, fontsize=8, loc="best")
-    fig.tight_layout()
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    fig.savefig(path, dpi=110)
-    plt.close(fig)
