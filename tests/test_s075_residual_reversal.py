@@ -68,7 +68,7 @@ def hand_sig(resid, signal_rows, n_rows):
     signal = np.zeros((n_rows, 1), bool)
     signal[signal_rows, 0] = True
     return {"resid5": np.asarray(resid, float).reshape(-1, 1), "beta": np.full((n_rows, 1), 1.0), "signal": signal,
-            "industry": np.array(["I"], dtype=object)}
+            "industry": np.array(["I"], dtype=object), "sector": np.array(["S"], dtype=object)}
 
 
 def hand_panel(close, open_=None):
@@ -271,3 +271,11 @@ def test_run_py_variant_batch_writes_prefixed_files_and_one_png(tmp_path, monkey
     assert sorted(p.name for p in out.glob("*.png")) == ["nosma__summary.png", "summary.png"]
     comparison = pd.read_csv(out / "variants_comparison.csv")
     assert set(comparison["variant"]) == {"baseline", "nosma"} and "selection_haircut" in comparison
+
+
+def test_peer_level_sector_vs_industry():
+    panel, sector_map = synthetic_panel()
+    ind = S.compute_signals(panel, sector_map, small_cfg(peer_level="industry"))
+    sec = S.compute_signals(panel, sector_map, small_cfg(peer_level="sector"))
+    assert ind["resid5"].shape == sec["resid5"].shape
+    assert not np.array_equal(np.nan_to_num(ind["resid5"]), np.nan_to_num(sec["resid5"]))

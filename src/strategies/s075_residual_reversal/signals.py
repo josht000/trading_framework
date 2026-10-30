@@ -94,9 +94,12 @@ def compute_signals(panel, sector_map, cfg):
         ind_codes = pd.factorize(industries)[0]
         sec_codes = pd.factorize(sectors)[0]
         min_peers = int(cfg["min_peers"])
-        peer = peer_returns(ret, peer_pool, ind_codes, min_peers)
-        fallback = peer_returns(ret, peer_pool, sec_codes, min_peers)
-        peer = np.where(np.isnan(peer), fallback, peer)
+        if cfg.get("peer_level", "industry") == "sector":
+            peer = peer_returns(ret, peer_pool, sec_codes, min_peers)
+        else:
+            peer = peer_returns(ret, peer_pool, ind_codes, min_peers)
+            fallback = peer_returns(ret, peer_pool, sec_codes, min_peers)
+            peer = np.where(np.isnan(peer), fallback, peer)
     with timing.stage("beta + residual"):
         beta = shift_down(rolling_beta(ret, peer, int(cfg["beta_window"]), int(cfg["beta_min_obs"])))
         h = int(cfg["resid_window"])
@@ -208,5 +211,6 @@ def build_trades(panel, sig, cfg, fill):
     frame["exit_date"] = dates[frame["exit_idx"].to_numpy(int)]
     frame["hold"] = frame["exit_idx"] - frame["entry_idx"]
     frame["industry"] = sig["industry"][frame["sym_idx"].to_numpy(int)]
+    frame["sector"] = sig["sector"][frame["sym_idx"].to_numpy(int)]
     frame["fill"] = fill
     return frame.sort_values(["entry_idx", "symbol"], kind="stable").reset_index(drop=True)

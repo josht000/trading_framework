@@ -230,7 +230,7 @@ class S075ResidualReversal(Strategy):
         dates = state["panel"]["dates"]
         overlay = (cfg.get("variants") or {}).get(cfg["variant"], {}) if cfg["variant"] != "baseline" else {}
         caption = (f"variant={cfg['variant']}  overlay={overlay or 'none (catalog baseline)'}\n"
-                   f"universe top {cfg['universe_top_n']} liquid (peers top {cfg['peer_top_n']}, SimFin industry) | signal {cfg.get('signal_mode', 'raw')} "
+                   f"universe top {cfg['universe_top_n']} liquid (peers top {cfg['peer_top_n']}, SimFin {cfg.get('peer_level', 'industry')}) | signal {cfg.get('signal_mode', 'raw')} "
                    f"{cfg['resid_window']}d residual, decile {cfg['decile']}, SMA{cfg['sma_window']}, skip {cfg.get('skip_days', 0)} | exit {cfg.get('exit_mode', 'resid')} "
                    f"cap {cfg['max_hold']} stop {cfg.get('stop_loss', 0)} target {cfg.get('take_profit', 0)} | regime {cfg.get('regime_mode', 'none')} | "
                    f"{cfg['cost_bps_per_side']} bps/side | slots {cfg['book_slots']} | data {cfg['data_dir']} {dates[0].date()}..{dates[-1].date()}")
@@ -247,7 +247,7 @@ class S075ResidualReversal(Strategy):
             f"- Data: `{cfg['data_dir']}`; sessions {dates[0].date()} .. {dates[-1].date()}; evaluation starts {first.date()}.",
             f"- Split: dev < {split.date()} <= test (locked; no parameters tuned).",
             f"- Universe: top {cfg['universe_top_n']} by 60d median dollar volume (price >= {cfg['min_price']}, >= {cfg['min_history']} bars); "
-            f"peers: top {cfg['peer_top_n']} pool, same SimFin industry (>= {cfg['min_peers']} peers, else sector).",
+            f"peers: top {cfg['peer_top_n']} pool, SimFin {cfg.get('peer_level', 'industry')} level (>= {cfg['min_peers']} peers).",
             f"- Signal: {cfg['resid_window']}d residual vs peers (beta {cfg['beta_window']}d through t-1), bottom decile and close > SMA{cfg['sma_window']}; "
             f"exit when residual > 0 or {cfg['max_hold']} sessions. Long-only, each position weighs 1/max(open, {cfg['book_slots']}) of capital (rest cash), research scale, {cfg['cost_bps_per_side']} bps per side.",
             "- `close` fill is an upper bound (signal and fill at the same close); `next_open` is the robustness variant.",

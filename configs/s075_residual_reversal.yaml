@@ -1,6 +1,7 @@
 data_dir: data/cache/daily_10years
 universe_top_n: 500
 peer_top_n: 1500
+peer_level: sector      # industry (74 SimFin groups, sector fallback) | sector (12 groups, matches the paper's 11 SIGC industries)
 min_price: 5.0
 min_history: 250
 min_peers: 5
@@ -57,3 +58,4 @@ variants:
   big5_dec05: {min_abs_resid: 0.05, decile: 0.05}
   # dev-selected winner of the 15-variant search (identical config to big10, whose outputs are the golden copy)
   best: {min_abs_resid: 0.10}
+  industry: {peer_level: industry}  # pre-fix granularity, kept for byte-for-byte old-baseline reproduction

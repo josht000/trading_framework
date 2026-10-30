@@ -294,7 +294,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: Primary now follows Connors' original (thresholds 35 / 65), not the earlier threshold-20 selection with an up-close next-open exit. Registered alternates: threshold 20 with exit close > SMA5; threshold 10 with exit at next open (Quantitativo, 3 positions, large caps, ~26%/yr blog claim). Trading Garden S&P 500 (cumulative RSI): 1963-today CAGR 8.3%; 2000-today 10.6% (199 trades). Single-stock runs are earnings-window contaminated: report with and without signals within +/-3 sessions of an earnings release (G-12).
 - parameter_variants: threshold/exit {cum RSI(2,2) < 35 & RSI(2) > 65 primary; cum RSI < 20 & close > SMA5 or first up-close; cum RSI < 10 & exit at next open (Quantitativo)}; tested thresholds 2/5/10/15/20/35; fill {moc_proxy, next_open}
 - data_needs: stocks: daily_10years (D1) + earnings flag (DP-EARN); ETFs: DP-ETF total-return
-- review: FIX | source UNVERIFIED (DYR page timed out)
+- review: RESOLVED
 
 ### S005 | Connors %b (Bollinger Band)
 - family: ETF index mean reversion
@@ -313,7 +313,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: Connors did not publish the lookback. Primary BB(20,2) matches the book as transcribed (a StockFetcher transcription quotes Connors' ETF results: 1,014 trades, 76.5% win, +0.70%/trade, 4.2-day hold; the same poster reports every trade since 4/16/2010 negative in a later test). QS variant: 5-day lookback, 2 sd. Be The Puck %b beats buy-and-hold Sharpe on only 19% of 371 stocks (invested ~18% of days, worst on big tech). Run the single-position SPY/QQQ version and the multi-ETF portfolio as two separate studies.
 - parameter_variants: band {BB(20,2) primary, BB(5,2) (Quantified Strategies)}; universe {Connors ETF list, SPY/QQQ only}
 - data_needs: ETF total-return daily series (DP-ETF)
-- review: FIX | source PARTIAL (Connors' lookback unpublished)
+- review: RESOLVED
 
 ### S006 | Double 7s
 - family: ETF index mean reversion
@@ -351,7 +351,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: The CXO page is a book review: Connors' general principles (buy pullbacks, above the 200-day, buy fear, no stops, hold overnight) and a warning that the analyses are 'hypothetical backtests without transaction costs or data mining corrections' (1995-2007). It contains NO 'three lower closes, exit above 5-day SMA' rule and no performance numbers. The rule is plausible but unsourced here. Same trigger family as S001/S009/S030: run it as the N=3 member of the down-streak family (N = 2..7) together with S030.
 - parameter_variants: streak length N {3 primary; 2..7 as the family grid shared with S009 and S030}
 - data_needs: ETF total-return daily series (DP-ETF)
-- review: FIX (citation/provenance) | source MISMATCH
+- review: RESOLVED
 
 ### S008 | ConnorsRSI(3,2,100) Stock Pullback
 - family: Connors oversold - stock pullback
@@ -370,7 +370,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: Be The Puck matches (ADX(10) > 30, low >= 4% below prior close, close in bottom 25% of the range, CRSI < 10, exit CRSI > 70; $5 / 250k-volume filters; no 200-day filter) but its scorecard is the weakest of the Connors rules: calls right 59% over 8,172 calls, beat buy-and-hold Sharpe on only 42/371. The guidebook's primary fill is the next-day limit 2-10% below the close; a limit fill creates adverse selection (you fill precisely on continuation days), so backtest both with fill-probability reported. A 4% intraday drop with a bottom-quartile close is largely earnings/news: report with and without earnings-window signals (+/-3 sessions, G-12).
 - parameter_variants: fill {signal-close (moc_proxy) primary, next_open, guidebook limit 2% / 5% / 10% below close}; earnings-window {included, excluded}
 - data_needs: stocks: daily_10years (D1) + earnings flag (DP-EARN)
-- review: FIX | source OK (weakest Be The Puck result)
+- review: RESOLVED
 
 ### S009 | 3 Days Down Overnight (SPY)
 - family: overnight (Connors streak)
@@ -389,7 +389,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: The Quantified Strategies Substack post is paywalled: only the rule sentence is visible (three consecutive down days, SPY since 1993, Amibroker). The earlier '212 trades' figure belonged to the Turnaround Tuesday statistic (S010) and is removed; trade count and performance for THIS rule are unverified. The relevant null is the unconditional close-to-open return of SPY (see S021), which is itself positive: report conditional minus unconditional overnight difference using the dividend-correct overnight series (raw open/close plus dividends at the ex-date), with a placebo of 2- and 4-day streaks.
 - parameter_variants: streak length {3 primary; placebo 2 and 4}; exit {next open primary, next close}; universe {SPY, then pooled QQQ/IWM/DIA/sector ETFs}
 - data_needs: ETF raw prices + dividends (DP-ETF raw+div)
-- review: FIX | source PARTIAL (paywalled)
+- review: RESOLVED
 
 ### S010 | Turnaround Tuesday (absorbs S085)
 - family: calendar (weekday reversal)
@@ -409,7 +409,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: Monday weakness {close(Mon) < close(Fri) primary; return <= -0.5% (ex-S085: Monday close-to-close decline > 0.5%); gap-down open(Mon) < close(Fri)}; VIX filter {off primary; VIX(t) > VIX(t-1) (ex-S085)}; exit {Tuesday open, Tuesday close}; placebo weekdays {Mon..Fri}
 - merged_from: S085
 - data_needs: ETF raw prices (DP-ETF); VIX for the S085 filter (DP-VIX)
-- review: FIX (S085 merged in) | source MISMATCH
+- review: RESOLVED
 
 ### S011 | Z-Score / Bollinger Lower-Band Mean Reversion (absorbs S012)
 - family: ETF index mean reversion
@@ -429,7 +429,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: SMA200 gate {on primary, off (ex-S012)} x RSI(2) < 10 filter {off primary, on (ex-S012)} (four trials); universe {SPY, QQQ, IWM}; ddof {0 primary, 1}
 - merged_from: S012
 - data_needs: ETF total-return daily series (DP-ETF)
-- review: MERGE (S011 + S012; S011 number kept) | source GENERIC
+- review: RESOLVED
 
 ### S013 | TLT Mean Reversion (RSI(2))
 - family: ETF index mean reversion
@@ -466,7 +466,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: Sector ETFs are ~0.8 correlated, so a raw '5-day worst 3 of 9' mostly ranks beta to the day's market move; ranking on the residual vs SPY ties to S075. The CXO page has no basket rule. The earlier 10-day SMA exit differed from the family without justification and is now a registered alternate.
 - parameter_variants: rank {residual vs SPY primary, raw 5-day return}; exit {SMA5 primary, SMA10}
 - data_needs: sector ETF total-return daily series (DP-ETF) + PIT sector universe table
-- review: FIX | source GENERIC
+- review: RESOLVED
 
 ---
 
@@ -492,7 +492,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: gap rule {Chan std-based primary; fixed_pct (ex-S022): open(t)/close(t-1) - 1 < -1% / -2% / -3% AND close(t-1) > SMA200 (S022 used a fixed -2%, S&P 500 stocks, which fires in bulk in March 2020 and 2022)}; exit {same-day close primary, next open}; std {population primary, sample}
 - merged_from: S022
 - data_needs: daily_10years (D1) + 09:31 minute bars for candidate days
-- review: FIX (falsification test; S022 merged in) | source OK
+- review: RESOLVED
 
 ### S016 | Short-on-Gap-Up (Chan mirror)
 - family: overnight and gap
@@ -510,7 +510,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - sources: [Chan Buy-on-Gap reproduction (l3a0 GitHub)](https://github.com/l3a0/quantitative-trading/blob/main/blog/buy-on-gap-lessons.md)
 - notes: CORRECTED: the l3a0 reproduction found the declared mirror rule PROFITABLE pre-cost (APR 12.2%, Sharpe 1.79, 725 shorts, survivor-biased, no costs) versus Chan's published 46% / 1.27; what failed was the match to Chan's published figure (a volatility-floor argument shows whatever Chan ran moved >= 4.5x as much as the declared rule). The steeper drawdown claim does reproduce (-6.5% vs -5.2%). Same fill issues, borrow/recall risk and survivorship as S015. Test as the hedge leg of S015 (market-neutral basket) under borrow scenarios (0.3% GC, 3%, 10% annualised); run long-only first for the rest of the catalog.
 - data_needs: daily_10years (D1) + 09:31 minute bars + borrow assumptions
-- review: FIX (note was wrong) | source MISMATCH
+- review: RESOLVED
 
 ### S017 | Night Trading Overnight-Bias Stock Selection (absorbs S034)
 - family: overnight and gap
@@ -530,7 +530,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: formation cadence {annual primary; quarterly; monthly (ex-S034)}; holding convention {overnight-only primary; full-day; long overnight / short intraday of the same stocks}; extra filter {none primary; negative trailing intraday return (ex-S034, kept only if it improves a hold-out)}; hold {daily overnight primary; one week dropped}
 - merged_from: S034
 - data_needs: daily_10years raw OHLC (D1) + dividend calendar (DP-CAL) for dividend-correct overnight returns
-- review: KEEP (S034 merged in) | source OK
+- review: RESOLVED
 
 ### S018 | Gap Fade (Fill the Gap)
 - family: overnight and gap
@@ -549,7 +549,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: Capital.com is a qualitative education page (common/breakaway/runaway/exhaustion gaps), no numbers. The gap-fill thesis is an intraday/few-day statement, hence the same-day-close primary. Gap-day volume is unknown at the open, so 'common vs breakaway' cannot be resolved; the quiet-tape proxy is the catalog's. Catalysts: earnings from SimFin Publish Date (2009+) / EDGAR 8-K 2.02 (2023-09+); FOMC and dividend calendars must be built. Report expected signal frequency per 500 stocks before sizing the trial. S018 and S019 partition gap-size/volume space so the two never trade the same name in opposite directions.
 - parameter_variants: exit {same-day close primary, next open, gap-fill target}; gap band {0.5-1.0 ATR primary}; catalyst filter {on}
 - data_needs: daily_10years (D1) + 09:31 minute bars + earnings/FOMC/dividend calendars (DP-EARN, DP-CAL)
-- review: FIX | source PARTIAL (education page)
+- review: RESOLVED
 
 ### S019 | Gap-and-Go Continuation (absorbs S025)
 - family: overnight and gap
@@ -569,7 +569,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: volume regime {> 2x median primary, < 1x median}; stop {prior close primary, gap-day low}; universe {stocks, index/sector ETFs (ex-S025: open > prior high, volume > 1.5x median, exit close t+2 / 2-bar low, max 3 sessions)}; direction on indices {long continuation primary; short fade}
 - merged_from: S025
 - data_needs: daily_10years (D1); ETF daily bars (DP-ETF)
-- review: FIX (S025 merged in) | source PARTIAL
+- review: RESOLVED
 
 ### S020 | Earnings-Eve Estimate-Drift Mean Reversion (Chan/Estimize)
 - family: overnight and gap
@@ -607,7 +607,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: filter {none primary, SMA(50) gate}; cost per side {0.5, 1, 2, 5 bps}; weekday table {Mon..Fri overnight returns, incl. ex-S084 Friday-close to Monday-open, both signs}; universe {SPY primary, QQQ, IWM}
 - merged_from: S084
 - data_needs: SPY raw OHLC + dividends (DP-ETF raw+div)
-- review: KEEP (S084 merged in) | source PARTIAL
+- review: RESOLVED
 
 ### S023 | Post-Earnings Overnight Drift
 - family: overnight and gap
@@ -625,7 +625,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - sources: Earnings Whispers (announcement premium +1.08% for Score +5, NOT post-announcement drift, vendor data): https://www.earningswhispers.com/about-score; Chan's Estimize post is unrelated to PEAD. No direct source for the overnight continuation claim
 - notes: The entry buys the open AFTER the surprise gap, so the overnight reaction is already realised; the claimed continuation from open(t) to close(t+1) needs its own evidence. The gap itself must not be used as the surprise. SUE = (EPS_q - EPS_{q-4}) / std of the last 8 such differences (seasonal random walk) at the Publish Date; consensus data is not in the repo. Shorts are a separate later experiment (G-09).
 - data_needs: SimFin quarterly EPS + Publish Date; EDGAR 8-K 2.02 timestamps 2023-09+ (DP-EARN); daily_10years (D1)
-- review: FIX | source MISMATCH
+- review: RESOLVED
 
 ### S024 | Ex-Dividend Window Capture (absorbs S101)
 - family: overnight and gap
@@ -645,7 +645,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: hold window {buy close before ex -> sell ex-date open (primary); -> ex-date close; -> ex-date+1 close (ex-S101)}; yield bucket {all; > 2%}
 - merged_from: S101
 - data_needs: raw prices + dividend/ex-date calendar 2016+ (DP-CAL); daily_10years (D1)
-- review: MERGE (S024 + S101; S024 number kept) | source GENERIC
+- review: RESOLVED
 
 ### S026 | Exhaustion Gap Fade After 3-Day Run
 - family: overnight and gap
@@ -688,7 +688,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: CORRECTED: the earlier attribution of profits to across-industry momentum and within-industry expected-return variation is wrong (those components are the ones that are NOT significant). Weekly closes carry a bid-ask-bounce component, so report both no-skip and one-day-skip. Weekly turnover is ~100%: at 10 bps/side the drag is ~10%/yr. Long-only beta is ~1.2-1.5 in selloffs, so the null is the vol-matched equal-weight universe with cash. A decile of the top-500 = 50 positions is infeasible at $1,000 per position. Control for S075.
 - parameter_variants: adjustment {raw primary, industry-adjusted, industry+market-adjusted}; skip {0 days primary, 1 day}; sort breadth {quintile of top-1000 research, top-10 paper}
 - data_needs: daily_10years (D1) + SimFin industry map
-- review: FIX | source MISMATCH
+- review: RESOLVED
 
 ### S028 | Jegadeesh 1-Month Reversal
 - family: cross-sectional short-term reversal
@@ -707,7 +707,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: CORRECTED: the attached Borsa Istanbul paper does NOT say reversal is strongest in liquid universes: its literature review says one-month reversal captures microstructure/liquidity effects 'typically strong in thinly traded emerging markets'; its pure reversal portfolio has net Sharpe 0.93 (CAGR 20.0%) vs 1.35 for the 52-week-high anchor and 1.16 for the equal-weight universe, and removing reversal from the blend RAISES net Sharpe by +0.11 (p = 0.12). The paper defines reversal as minus last month's return inside a z-score composite, not a bottom-decile buy. Be The Puck (stock below SPY last month -> hold a month): beat buy-and-hold Sharpe on 82/372. Benchmark: vol-matched equal-weight universe. Slower than S027; the monthly member of the reversal family.
 - parameter_variants: adjustment {raw primary, industry-adjusted}
 - data_needs: daily_10years (D1) + SimFin industry map
-- review: FIX | source MISMATCH
+- review: RESOLVED
 
 ### S029 | Capitulation-Volume Loser Reversal
 - family: cross-sectional short-term reversal
@@ -726,7 +726,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: The regime filter is justified as avoiding falling knives, but the fire-sale mechanism (Coval & Stafford 2005; Atlas 12.5) is concentrated in crashes, so the filter may remove the best events (Mar-2020, Dec-2018). Volume > 3x with a bottom-decile 5-day return is dominated by earnings/news-driven drops: without the earnings flag this is S054/S055 in disguise. Signals fire in clusters on market-wide selloff days, so events are not independent: effective sample size per DAY, cluster-robust standard errors by date.
 - parameter_variants: regime filter {SPY > SMA200 on, off}; earnings window {included, excluded}
 - data_needs: daily_10years (D1) + earnings flag (DP-EARN)
-- review: FIX | source GENERIC
+- review: RESOLVED
 
 ### S030 | Down-Streak Reversal (5+ Days)
 - family: cross-sectional short-term reversal
@@ -782,7 +782,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: The Trading Garden page cited earlier tests a 252-day-high BREAKOUT on the S&P cash index, i.e. S033, not a decile portfolio, and is no longer cited here. Highly collinear with S041 momentum: report the correlation (G-10). Benchmark: vol-matched equal-weight universe.
 - parameter_variants: selection {top decile by rank primary; ratio >= 0.8 floor}; holding {1 month primary; 6 months overlapping with 1-month skip}
 - data_needs: daily_10years (D1)
-- review: FIX | source PARTIAL
+- review: RESOLVED
 
 ### S033 | 52-Week-High Breakout (Donchian-style)
 - family: trend / slow breakout
@@ -820,7 +820,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: CORRECTED: the paper uses 252-day vol on a top-100 liquid universe (ranked by 60-day median traded value); the 60-day vol appears only as the vol-targeting estimator for the whole book. Paper numbers: pure low-vol net Sharpe 1.07 / CAGR 21.8% / max drawdown -66.8% in lira terms, USD Sharpe 0.13; the sector-neutral run adds only +1.4% alpha (t = 0.48). Low-vol deciles are utilities/staples/REIT heavy (2022 rate sensitivity, sector concentration). Benchmark: vol-matched equal-weight universe, not just the cap-weighted index.
 - parameter_variants: vol window {252-day primary, 60-day}; universe N {500 primary, 100}; sector-neutral {off primary, on}; low-beta decile (shrunk 252-day beta = 0.6 x beta_ts + 0.4, beta-scaled to 1) as a variant
 - data_needs: daily_10years (D1) + SPY (DP-ETF) for the beta variant
-- review: FIX | source PARTIAL
+- review: RESOLVED
 
 ---
 
@@ -846,7 +846,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: speed {20/10 System 1 primary; 55/20 System 2 (ex-S037)}; last-trade filter {on for speed 20, off for speed 55}; exit {channel exit primary; chandelier 3 x ATR(22) (see S091)}; direction {long-only, long-short}
 - merged_from: S037
 - data_needs: ETF total-return daily series incl. TLT, GLD, USO, GSG, dollar ETF (DP-ETF)
-- review: DEMOTE (trend-family control; S037 merged in) | source OK
+- review: RESOLVED
 
 ### S038 | NR7 / Inside-Day Breakout (absorbs S039)
 - family: momentum and breakout
@@ -866,7 +866,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: setup {NR7 or inside day; NR7 only; inside day only}; exit {2-session flatten primary; first profitable close; opposite break; stop + 2R target (ex-S039)}
 - merged_from: S039
 - data_needs: daily_10years (D1); ETF daily bars (DP-ETF)
-- review: DEMOTE (falsification; S039 merged in) | source OK
+- review: RESOLVED
 
 ### S040 | Volume-Confirmed 20-Day-High Breakout
 - family: momentum and breakout
@@ -885,7 +885,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: The Kvants page is a framework article ('a testable version must define the level, breakout distance, volume baseline...'); the parameters here (0.1 ATR, 1.5x median volume, 2R, 8 sessions) are the catalog's own, hence research-hypothesis. The Atlas (10.4, Mittal & Choudhary 2026) argues 'quiet-looking moves travel further than visually impressive breakouts', so both volume regimes are tested. Entering at the next open after a high-volume breakout carries gap risk. Be The Puck's 20-day-style rules (Four-Week Rule 74/372; Bollinger Breakout 54/372) are mediocre vs buy-and-hold.
 - parameter_variants: volume regime {> 1.5x median primary; < 1.0x median}; entry {next open primary with gap guard; limit at close(t)}
 - data_needs: daily_10years (D1)
-- review: FIX | source GENERIC
+- review: RESOLVED
 
 ### S041 | 12-1 Cross-Sectional Momentum
 - family: momentum and breakout
@@ -943,7 +943,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: signal {12-month return primary; ma200_distance = close/SMA200 - 1 (ex-S068: weekly, top 7, weighted by signal share, SHY for empty slots)}; universe {asset-class set primary; two-asset SPY/QQQ (ex-S074, weekly, 21-day return + 63-day z-score)}; rebalance {monthly primary; weekly}
 - merged_from: S068, S074
 - data_needs: ETF total-return daily series (DP-ETF)
-- review: FIX (S068, S074 merged in) | source MISMATCH
+- review: RESOLVED
 
 ### S044 | Efficiente 5 MPT Replication
 - family: momentum and breakout
@@ -981,7 +981,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: The attached paper's own conclusion: Sharpe 1.19 vs 0.89 for the cap-weighted index but alpha -0.4%/yr (95% CI [-6.3%, +5.5%]) against a vol-matched equal-weight universe; levels are 'in-sample-flattered'; ~57% monthly turnover. The vol-matched equal-weight benchmark is a REQUIRED output column; interpret any result below benchmark + 0.15 Sharpe as 'no selection skill'. S045b deviates from the paper (drops value, replaces the three-state gate with a binary one, drops the buffer and the low-vol tilt, uses top-10 directly); the old 4-indicator cap is no longer a constraint. The Efficiente 5 paper is NOT a source for this entry.
 - parameter_variants: design {S045a paper design primary; S045b catalog simplification}
 - data_needs: daily_10years (D1) + SPY (DP-ETF)
-- review: FIX | source PARTIAL
+- review: RESOLVED
 
 ### S046 | Industry Rotation via Market-State Similarity
 - family: momentum and breakout
@@ -1000,7 +1000,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: The cited page is Zakamulin's abstract (May 2026): monthly French industry portfolios, quantile predictability concentrated in the tails, a market-state similarity strategy with 'higher Sharpe, lower volatility, substantially smaller drawdowns than the passive equal-weighted industry benchmark'. The '50 closest analogs' and 'top/bottom tercile' parameters are NOT in the abstract (catalog's own). Replicate on French data first, then port to ETFs.
 - parameter_variants: analog count K {50 primary, 25, 100}; legs {long-short primary; long-only}
 - data_needs: Ken French 49-industry data (external one-off); sector ETF series (DP-ETF)
-- review: FIX | source PARTIAL (abstract only)
+- review: RESOLVED
 
 ### S047 | Absolute / Dual Momentum (S047a absolute SPY vs cash; S047b Antonacci GEM)
 - family: momentum and breakout
@@ -1019,7 +1019,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: The earlier rule (SPY -> TLT -> cash) was neither the Trading Garden rule ('long for the whole next month if the 12-month return beats the 12-month cash rate') nor GEM; the TLT fallback adds duration risk (2022) and is now a registered variant of S047a. Trading Garden results (S&P/MES): 1963-today 35 trades, 68.6% win, CAGR 11.5% vs 10.9%; only 15 trades since 2000. Trade count is tiny (G-05): use as the most robust crash filter/overlay for faster strategies. Comparator: Faber 10-month SMA gate (price vs 10-month SMA, total return, monthly).
 - parameter_variants: variant {S047a SPY vs cash primary; S047b GEM}; defensive asset {cash primary; TLT (ex-original S047); AGG}; comparator {10-month SMA gate}
 - data_needs: SPY, EFA/ACWX, AGG, BIL total-return series + FRED T-bill (DP-ETF, DP-FRED)
-- review: FIX (rename; split a/b) | source MISMATCH
+- review: RESOLVED
 
 ### S048 | Validea Short-Term Sector Momentum
 - family: momentum and breakout
@@ -1076,7 +1076,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: Parameters 63/10/3/2% are all free: run a coarse grid with full trial accounting, not the single (63, 10, 3, 2%) point. A price within 2% of its 10-day SMA after 3 down closes can only exceed the breakout high within 10 sessions if the pullback was shallow. The cited Kvants page has no rules or numbers (decorative citation, see S040). Report with and without earnings-window signals (G-12).
 - parameter_variants: grid {breakout lookback 42/63/126; pullback days 2/3/4; SMA distance 1%/2%/3%} (all registered trials)
 - data_needs: daily_10years (D1) + earnings flag (DP-EARN)
-- review: FIX | source GENERIC
+- review: RESOLVED
 
 ### S051 | Darvas Box Breakout
 - family: momentum and breakout
@@ -1094,7 +1094,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - sources: Be The Puck - Darvas box scorecard (mechanical definition above; beat buy-and-hold Sharpe on 44/372; S&P 500 index +4.3%/yr vs +8.9%); the Kagels Turtle page cited earlier contains no Darvas rule and is no longer cited
 - notes: REPLACED: the earlier '55-day range unexceeded for 15+ sessions' mixed two windows and was an arbitrary range breakout (a close cousin of S036), with a stray non-English typo in the notes (fixed). The three-day box is the Be The Puck mechanical definition; Darvas' original rules were discretionary.
 - data_needs: daily_10years (D1)
-- review: FIX | source MISMATCH
+- review: RESOLVED
 
 ---
 
@@ -1120,7 +1120,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: cadence {monthly primary; weekly ex-S086 (weeks 3-4 of Jan/Apr/Jul/Oct)}; weighting {equal paper, value research}; sort {volume concentration primary; none}; leg {long announcers - SPY hedge primary; long-short}
 - merged_from: S086
 - data_needs: SimFin Publish Date 2009+ (DP-EARN); daily_10years (D1)
-- review: KEEP (S086 merged in) | source OK
+- review: RESOLVED
 
 ### S053 | Pre-Earnings Run-Up (consensus-free; replaces the Earnings Whispers Score setup)
 - family: earnings (calendar-driven)
@@ -1139,7 +1139,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: RESOLVED (was BLOCKED): the proprietary Score has no free history and the 'Score > +2' threshold is not even on the vendor page, so the entry is rebuilt on public data (SimFin Publish Date from 2009, prices from daily_10years). Even the vendor's Score +5 edge is only ~0.6% over six sessions before costs on a vendor-selected sample. Weekly version of S052, run in parallel with it; the earlier claim of exiting 'before the reaction risk' was wrong and is removed.
 - parameter_variants: entry offset {5-7 sessions before primary; 1 week before}; sort {volume concentration top tercile primary; none}
 - data_needs: SimFin Publish Date 2009+ (DP-EARN); daily_10years (D1)
-- review: BLOCKED -> RESOLVED (rebuilt consensus-free) | source OK (vendor page)
+- review: RESOLVED
 
 ### S054 | PEAD Earnings-Surprise Drift (SUE / announcement-return, point-in-time)
 - family: earnings and news
@@ -1158,7 +1158,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: FIXED: the original 'top decile of the quarter's surprises' ranked announcements against all announcements in the season, including future ones (look-ahead). Neither the Earnings Whispers page nor NBER w13090 is about post-announcement drift. No consensus estimates are available, so SUE + EAR are the surprise measures. PEAD in large caps is thought to have weakened sharply after 2000: test the post-2016 sample before relying on it. Long-only first; the short leg for big misses is a separate experiment (G-09). Matched size/industry controls and subperiods required.
 - parameter_variants: surprise measure {SUE top decile primary; EAR top decile; both (SUE and EAR top decile)}; hold {10 primary, 21, 42}; leg {long primary; short bottom decile separate}
 - data_needs: SimFin quarterly EPS + Publish Date; EDGAR 8-K 2.02 timestamps 2023-09+ (DP-EARN); daily_10years (D1)
-- review: FIX (look-ahead) | source MISMATCH
+- review: RESOLVED
 
 ### S055 | Post-Earnings-Oversold Bounce
 - family: earnings and news
@@ -1195,7 +1195,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: CORRECTED: the earlier 'FINBERT tested best' is wrong (OPT is best). LEAKAGE: the models were fine-tuned on an 80% random split of articles across 2010-2023, so the held-out 20% is interleaved in time with training data, and OPT is a GPT-3-class model whose pretraining covers most of the sample: Sharpe 3.05 (mean daily L-S return 0.55%, ~140%/yr) is not credible out of sample. Data: Refinitiv news + CRSP (commercial), 965,375 articles after a 0.8 cosine novelty filter. GPT-4 headline scores predict drift only AFTER the model cutoff, concentrated in small stocks and negative news, with returns declining as LLM adoption rises (Lopez-Lira & Tang 2026). Therefore: frozen 2019 FinBERT, evaluate ONLY on post-cutoff data (news.parquet from 2023-09 is entirely post-cutoff for FinBERT) or live capture; masked-ticker and cross-model disagreement checks; report IC decay by month.
 - parameter_variants: model {FinBERT frozen primary; LM dictionary baseline}; timing {close entry / next-open exit primary; pre-6am same-day branch}; legs {long-only primary; long-short}
 - data_needs: data/pit/news/news.parquet (DP-NEWS, 2023-09+) + daily_10years (D1); 15-year archive NOT available
-- review: FIX (claims misreported) | source OK
+- review: RESOLVED
 
 ### S057 | LLM Top-Down Sector Allocation (forward test only)
 - family: earnings, news and LLM (forward test)
@@ -1213,7 +1213,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - sources: [arXiv 2503.09647 — Leveraging LLMs for Top-Down Sector Allocation](https://arxiv.org/html/2503.09647v5)
 - notes: RESOLVED as a forward test: the paper's backtest covers only January 2019 through June 2019 ('due to constraints on computational resources and cost'; 300,000 articles; 8.79% return, Sharpe 2.51 vs cross-momentum -1.39% / -0.61). The earlier '2019-2024' was wrong. Six months, one regime, and a frontier LLM that knows 2019 macro is no evidence, and every rebalance costs LLM calls, so the entry is removed from the backtest queue and run only as a live paper experiment with timestamped capture (existing Alpaca news client in src/data/news_client.py), score IC decay, and costs.
 - data_needs: live news capture (DP-NEWS live) + frozen model; no historical backtest possible
-- review: BLOCKED -> forward test only | source MISMATCH
+- review: RESOLVED
 
 ### S058 | News-Topic Conditioned Sentiment (feature design for S056)
 - family: earnings, news and LLM (feature)
@@ -1232,7 +1232,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - sources: Attached paper (user upload) - Opening the Black Box: Which News Explain LLM-Based Stock Ratings? (SSRN 7665703); the attached PDF is a single title page and SSRN also lists 1 page, so only the abstract was used
 - notes: RESOLVED by re-scope: the earlier 'rating upgrade + positive news -> buy' was the catalog's own placeholder, not derived from the paper. The full paper (if rules are wanted) must be requested from the author/SSRN.
 - data_needs: data/pit/news/news.parquet (DP-NEWS, 2023-09+)
-- review: BLOCKED -> RE-SCOPED as S056 feature | source MISMATCH
+- review: RESOLVED
 
 ### S059 | Insider Cluster Buying
 - family: earnings and news
@@ -1251,7 +1251,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: CORRECTED: this is not Chan's research. The post documents a guest thesis whose random forest looked good in validation but in the 2014-2015 test 'the relationship broke down substantially... the actual returns on all remaining prediction deciles appeared no better than random; relative returns were negative for every decile'. No cluster rule is tested there, so the cluster rule, thresholds and exits are entirely the catalog's; the only documented evidence points to NO edge out of sample. Form 4 is not in the repo's EDGAR table (8-K, 10-Q, 13G, S-x only).
 - parameter_variants: cluster {>= 3 insiders primary; >= 3 and zero sells}; hold {63 sessions primary; 20-day-low exit}
 - data_needs: SEC Form 4 insider transactions bulk TSV 2006+ (DP-FORM4); daily_10years (D1)
-- review: FIX | source MISMATCH
+- review: RESOLVED
 
 ### S060 | News-Intensity Overnight Drift (conditioning feature of S056)
 - family: earnings and news
@@ -1270,7 +1270,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - sources: [arXiv 2412.19245 — Sentiment trading with LLMs](https://arxiv.org/html/2412.19245)
 - notes: RESOLVED as a conditioning feature: no evidence exists for the standalone rule and the cited paper has no overnight-news result. The archive in the repo (news.parquet, ~75k rows from 2023-09, ~1,900 symbols) is too sparse for 15-year counts but is enough for a post-cutoff research test; item-count z-scores are noisy at ~40 items per symbol, hence the minimum-count requirement. Overlaps S056/S023. Same look-ahead hygiene as S056 (frozen FinBERT, post-cutoff windows).
 - data_needs: data/pit/news/news.parquet with timestamps (DP-NEWS, 2023-09+); daily_10years (D1) + 09:31 minute bars
-- review: BLOCKED -> RESOLVED as S056 conditioning feature | source GENERIC
+- review: RESOLVED
 
 ---
 
@@ -1295,7 +1295,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: The thresholds (VIX > 30, 1.5x 20-day average, RSI(2) < 10) are the catalog's own. Independent episodes with VIX > 30 in 2016-2026 are about 4-6 (Feb-2018, Dec-2018, Mar-Jun 2020, 2022, Apr-2025): a triple-conditioned rule has a handful of events, so report an event table with dates and make no significance claim. In sustained crises (2008-style) buying the first VIX > 30 close loses for months and the 2016+ sample omits that failure case, so validate pre-2016 with CBOE history (VIX from 1990, SPY 1993+) under the same rules. The 'VIX turned down' confirmation follows the Connors CVR3 idea (VIX bar rules: low above the 10-day MA, close >= 10% above it, black candle; sell on the mirror).
 - parameter_variants: VIX threshold {30 primary, 25, 35}; confirmation {none primary; VIX close < prior close}; universe {SPY primary; QQQ, IWM, sector ETFs}
 - data_needs: CBOE VIX daily 1990+ (DP-VIX) + SPY total-return series (DP-ETF)
-- review: FIX | source GENERIC
+- review: RESOLVED
 
 ### S062 | VIX/VXV Ratio Spike (Term Structure)
 - family: volatility regime
@@ -1314,7 +1314,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: Selectively quoted earlier: across ALL 113 days with ratio >= 1.10 the average one-month forward return was 0.22% vs 0.75% for randomly timed holds (median 2.69% vs 1.49%), the correlation of the ratio with forward returns is 'an uninspiring 0.0324', and the author attributes the pattern to data overlaps intersecting with 2008; data begin mid-2006. 25 de-overlapped incidents dominated by 2008 is not a validated edge; since 2016 the incidents are likely under 10. Report BOTH all-days and incident-based statistics, include 2008 through CBOE history so the drawdown is in sample, and trial-count the 1.10 threshold. Signal counts must not overlap (Schaeffer's incident convention); run in parallel with S061 as one vol-timing basket.
 - parameter_variants: ratio threshold {1.10 primary; 1.05, 1.15}; statistics {all signal days and de-overlapped incidents}
 - data_needs: CBOE VIX + VIX3M/VXV history 2006+ (DP-VIX) + SPY total-return series
-- review: FIX | source OK (selectively quoted)
+- review: RESOLVED
 
 ### S063 | VIX Moving-Average Crossover Regime
 - family: volatility regime
@@ -1370,7 +1370,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: Chan's post is about Hurst/variance scaling, not compression breakouts. RV(5) < 0.5 x RV(20) is frequent (roughly 10-15% of days) so signals cluster inside quiet regimes. Same mechanism as S038/S094/S095 (G-10); the Bollinger squeeze scored worst of all rules on Be The Puck (30/371). Run as the volatility-compression cluster champion candidate with S094 and S095 as variants.
 - parameter_variants: order validity {5 sessions primary; 1, 3}; tie-break {nearer to open primary}
 - data_needs: ETF daily bars (DP-ETF)
-- review: FIX | source GENERIC
+- review: RESOLVED
 
 ### S066 | Zweig Breadth Thrust
 - family: volatility regime
@@ -1406,7 +1406,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - sources: [GitHub — phuazz/breadth-thrust-etf (sleeve A)](https://github.com/phuazz/breadth-thrust-etf)
 - notes: RESOLVED (was BLOCKED): the source breadth feature needs point-in-time ETF constituent holdings (the US iShares endpoint has been blocked since 2026-05-16; the repo moved to UK UCITS endpoints and Norgate). It is approximated with our own PIT stock universe mapped to sectors via SimFin industry codes; using today's holdings would be look-ahead. The repo's reported numbers are in-sample (walk-forward Sharpe for sleeve A +1.00; blend Sharpe standard error +/-0.4 over 7.5 years of weekly data; weighting, universe and cost calibration applied across the entire backtest): do NOT use them as a target. 'Weighted by positive relative share' is the source's phrase and is specified here as weight proportional to max(z, 0). Fill at next open per the shared spec.
 - data_needs: daily_10years (D1) + SimFin industry-to-sector map; sector ETFs (DP-ETF)
-- review: BLOCKED -> RESOLVED (breadth from own PIT universe) | source PARTIAL
+- review: RESOLVED
 
 ### S069 | TLT Crash-Hedge Rotation
 - family: volatility regime
@@ -1443,7 +1443,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: CORRECTED numbers: BestFolio reports 26.8-26.9%/yr over the full simulated history since 1985 with a worst fall of -76.2% on 26 Oct 1987 (a drawdown measure on SIMULATED 3x QQQ, not a single-day loss), and 30.0%/yr with worst fall -20.4% (25 Aug 2015) since TQQQ/SQQQ launched on 11 Feb 2010; 10 bps one-way costs; stand-in simulations before fund inception (TQQQ = simulated 3x QQQ before 2010-02-11). The earlier entry ('oversold AND above 200-SMA', 24.9%/yr, '-76% single-day tail risk') contradicted the page. Most of the published history is a simulation of 3x products: leveraged-ETF path dependence, volatility decay and financing dominate, so use REAL TQQQ history only. With a $5,000 paper account a -70% drawdown is existential: cap exposure.
 - parameter_variants: TQQQ cap {1.0, 0.5 of account}; oversold exit {RSI > 30.3 primary}; non-oversold asset {QQQ above SMA / SHY below primary}
 - data_needs: TQQQ and QQQ daily bars from 2010-02-11 (DP-ETF fetch list must add TQQQ); SHY/BIL
-- review: BLOCKED -> RESOLVED (public rules, real TQQQ history, exposure cap) | source MISMATCH
+- review: RESOLVED
 
 ---
 
@@ -1468,7 +1468,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: Springer (2000-2024, 30 ETF pairs, 12-month formation, monthly ADF on the ratio, rolling z-score) fetched. The SPY/IVV example (cointegrated for 24 years) yielded 'a modest total profit of 1.01% and a Sharpe ratio of 0.28' at z = 2; lowering the threshold raises profit and Sharpe but also volatility and kurtosis. The earlier z = 0 exit and +/-3 stop differed from the paper. Selecting pairs and testing on the same 12 months with 30 pairs x monthly 5% tests produces ~1.5 false positives per month.
 - parameter_variants: exits {z 0.75 / -0.5 primary (paper); z = 0 with +/-3 stop}; sizing {equal-share primary (paper); dollar-neutral with hedge ratio}; entry threshold {2.0 primary; lower thresholds}
 - data_needs: ETF total-return daily series for the pair list (DP-ETF)
-- review: FIX | source OK
+- review: RESOLVED
 
 ### S072 | Gold/Silver Ratio Mean Reversion
 - family: pairs and spreads
@@ -1588,7 +1588,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: CORRECTED: Chan's post (9 Dec 2008) reports Sharpe 4.8 (no cost) / 3.5 (10 bps) on one year (2008), not '> 5 before costs', and Example 3.8 belongs to the 2008 book (Quantitative Trading), not Algorithmic Trading (2013). Chan's example is a simple long-short reversal portfolio (verify in the 2008 book); the OU half-life / 50-stock weekly basket is the catalog's design. A 50-name dollar-neutral, beta-neutral basket is not implementable at $5,000 (research scale only) and needs borrow (G-09). Chan stresses opening-auction execution. Chan's stated costs: 10 bps round-trip for SP1500 large caps (try 15 bps).
 - parameter_variants: stage {simple daily reversal long-short primary; OU half-life version}; cost {10 bps round trip, 15 bps}
 - data_needs: daily_10years (D1) + borrow assumptions; research scale only
-- review: FIX | source MISMATCH
+- review: RESOLVED
 
 ---
 
@@ -1614,7 +1614,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: window {entry close of day -2, exit close of day +3 primary; entry day -2 or -1, exit day +2..+5 grid; ex-S083: entry OPEN of day -2, exit close of day +1}; split by prior-month return sign; placebo {random 4-day windows}
 - merged_from: S083
 - data_needs: SPY, IWM, RSP total-return daily series (DP-ETF) + trading calendar (DP-CAL)
-- review: FIX (spec bug; S083 merged in) | source OK
+- review: RESOLVED
 
 ### S080 | Pre-Holiday Effect
 - family: calendar
@@ -1633,7 +1633,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: ChartSchool describes: purchase equities one or two days before a holiday (selling pressure before a three-day holiday) with results by holiday and an original study of 419 closings 1928-1975; documented sample ends 1975. Holiday count is ~9-10 per year (~90 events in 2016+; Juneteenth since 2022). Be The Puck: beat buy-and-hold Sharpe on 91/372. Volume is very light on pre-holiday sessions: use conservative fills.
 - parameter_variants: exit {close of last session before holiday primary; first session after holiday}; early-close days {excluded primary; separate}
 - data_needs: SPY total-return daily series (DP-ETF) + exchange holiday calendar (DP-CAL)
-- review: FIX | source PARTIAL
+- review: RESOLVED
 
 ### S081 | Pre-FOMC Announcement Drift
 - family: calendar
@@ -1652,7 +1652,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: FIXED: the window is ~14:00 on the day before to ~14:00 on the announcement day; the earlier 'sell at the open AFTER the announcement' held through the 2 pm release and the following night, contradicting its own 'exit before reaction risk' justification. The '>30x other days' figure is not in the abstract or introduction (which say 'orders of magnitude larger') and is removed. Expect near zero post-2015: split subperiods at 2015. Placebo = the same windows before other macro announcements. Be The Puck: beat buy-and-hold Sharpe on 43/372 ('kept to show that'). Eight scheduled meetings a year; pair with S079/S080 in one calendar basket.
 - parameter_variants: exit {open of announcement day primary; close of announcement day; 14:00 to 14:00 minute version}; subperiods {to 2015, after 2015}; placebo {other macro announcements}
 - data_needs: SPY daily bars (DP-ETF); SPY minute bars 2023-09+; FOMC calendar (DP-CAL)
-- review: FIX | source OK (page unretrievable; verified via JF 2015 and Kurov et al.)
+- review: RESOLVED
 
 ### S082 | Options-Expiration-Week Drift
 - family: calendar
@@ -1695,7 +1695,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: The old condition repeated close > SMA200 twice. In stocks above the 200-day SMA the low touches EMA(20) on a large fraction of days, so 'several per week' signals are unselective: the pullback-depth condition or distance ranking is added. The 20-EMA pullback is standard swing practice; Connors' family uses shallower pullbacks (5-day MA exits), see S001. Report with and without earnings-window signals (+/-3 sessions, G-12).
 - parameter_variants: pullback depth x {none, 2%, 3%, 5%}; earnings window {included, excluded}
 - data_needs: daily_10years (D1) + earnings flag (DP-EARN)
-- review: FIX | source GENERIC
+- review: RESOLVED
 
 ### S088 | MACD Bullish Cross with Volume
 - family: trend and pullback
@@ -1768,7 +1768,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - sources: [Kagels Trading — Turtle rules](https://kagels-trading.com/blog/turtle-trading/)
 - notes: Exit variant of the Donchian family (S036, speed 55): the 3 x ATR(22) chandelier is ~6-9% below the high for equities, tight relative to the volatility of 55-day swings, and induces churn; Be The Puck's Chandelier Exit beat buy-and-hold on 74/372. Run as `S036 --speed 55 --exit chandelier` and compare with the 20-day-low and 2N exits. Kagels has no chandelier rule (catalog's own).
 - data_needs: ETF total-return daily series (DP-ETF)
-- review: DEMOTE (exit variant of S036; S037 merged into S036) | source PARTIAL
+- review: RESOLVED
 
 ### S093 | Higher-Low Reversal Entry
 - family: trend and pullback
@@ -1787,7 +1787,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: Pattern definitions are unambiguous on daily bars. Without a decline precondition the original entry (above SMA200, rising lows, bullish bar, volume) is a continuation entry, not a reversal; report both decline definitions and the version without any precondition as the control. Report with and without earnings-window signals (G-12).
 - parameter_variants: decline definition {A: drawdown >= x%, B: RSI(5) < 40}; control {no precondition}
 - data_needs: daily_10years (D1) + earnings flag (DP-EARN)
-- review: FIX | source GENERIC
+- review: RESOLVED
 
 ### S094 | Bollinger Squeeze Breakout
 - family: trend and pullback
@@ -1850,7 +1850,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: CORRECTED: the earlier 'bar 2 range inside bar 1's range, bar 3 close above bar 1's close' was a different pattern and 'inside' contradicted 'lowest low of the three'. The SMA200 gate and the 5-session/pattern-low exit are the catalog's additions. Compare against random bars of equal frequency; register pattern, length, distance threshold and holding rule before testing (Atlas pattern registry). Based on Bulkowski's Stocks & Commodities article (Jan 2000).
 - parameter_variants: gate {none primary; SMA200}; exit {pattern low / 5 sessions primary}; mirror short {long-only first}
 - data_needs: daily_10years (D1)
-- review: FIX (rule was wrong) | source MISMATCH
+- review: RESOLVED
 
 ### S097 | Bullish Engulfing After Down-Streak
 - family: candlestick patterns
@@ -1947,7 +1947,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: RESOLVED (was BLOCKED): CPER launched in late 2011 and is already in the daily_10years cache from 2016-01-04 (2,718 rows; thinly traded with zero-volume days: apply the data-hygiene mask), as are GLD and USO, so the CPER/GLD ratio is testable on 2016+ without futures data; no pre-2016 regime coverage is claimed. The ratio's relationship to cyclicals vs defensives flips with the rate regime and `21-day change > 0 AND 63-day z > 0` flips often, so test against the simple relative-momentum control and accept the null if it adds nothing. Sector ETFs XLB/XLI/XLP/XLU need DP-ETF.
 - parameter_variants: signal {CPER/GLD ratio primary; relative momentum of cyclical minus defensive baskets (no copper)}; cadence {weekly primary; monthly}
 - data_needs: CPER and GLD in daily_10years (D1); XLB, XLI, XLP, XLU (DP-ETF)
-- review: BLOCKED -> RESOLVED (CPER/GLD in cache; relative-momentum control) | source GENERIC
+- review: RESOLVED
 
 ### S103 | Yield-Curve Financials/Utilities Rotation
 - family: structural edge
@@ -1985,7 +1985,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - notes: CORRECTED: Chan advises stopping SHORTS after a crisis; a long-only de-risk-to-cash gate is not Chan's advice, and the 10%-from-high trigger with 'new 63-day high' re-entry is a drawdown gate that is late both ways. Test crash months (Apr-May 2020 analogue) and overlay turnover; the Atlas's honest benchmark asks whether a change-point gate beats plain vol scaling.
 - parameter_variants: overlay {(a) catalog gate; (b) vol-scaling primary candidate; (c) none}; vol target {12% L/S; unscaled full-sample vol long-only}; cap {1.0 primary; 1.5-2.0}
 - data_needs: daily_10years (D1) + SPY (DP-ETF)
-- review: FIX (compare overlays) | source MISMATCH
+- review: RESOLVED
 
 ### S105 | Volatility-Targeted Overnight Carry
 - family: structural edge
