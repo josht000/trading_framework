@@ -28,7 +28,10 @@ def load_sector_map(simfin_dir=None):
 
 def _read_symbol(path):
     frame = pd.read_parquet(path, columns=list(FIELDS))
-    dates = frame.index.tz_convert(NY).tz_localize(None).normalize()
+    index = pd.DatetimeIndex(frame.index)
+    if index.tz is None:
+        index = index.tz_localize(NY)
+    dates = index.tz_convert(NY).tz_localize(None).normalize()
     frame.index = dates
     return frame[~frame.index.duplicated(keep="last")].sort_index()
 

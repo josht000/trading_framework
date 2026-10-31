@@ -5,6 +5,7 @@ import yaml
 
 import run as run_module
 from src.data.alpaca_history import merge_bar_file, normalize_bars
+from src.data.daily_panel import load_panel
 from src.data.liquid_universe import load_liquid_ranks, write_liquid_ranks
 from src.framework.daily_study import DailyStudy
 from src.framework.preflight import check_study_inputs
@@ -189,6 +190,18 @@ def test_alpaca_daily_bar_normalization_and_merge(tmp_path):
     saved = pd.read_parquet(path)
     assert len(saved) == 1
     assert saved.iloc[0]["close"] == 12
+
+
+def test_daily_panel_accepts_naive_local_date_indexes(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_CACHE", "0")
+    dates = pd.date_range("2020-03-09", periods=3, freq="B")
+    pd.DataFrame({"open": [10.0, 11.0, 12.0], "close": [10.5, 11.5, 12.5],
+                  "volume": [100.0, 110.0, 120.0]}, index=dates).to_parquet(
+        tmp_path / "AAA_1Day_yahoo.parquet"
+    )
+    panel = load_panel(tmp_path, symbols=["AAA"], suffix="_1Day_yahoo.parquet")
+    assert list(panel["dates"].date) == list(dates.date)
+    assert panel["close"][:, 0].tolist() == [10.5, 11.5, 12.5]
 
 
 def test_run_check_data_writes_manifest_without_simulating(tmp_path, monkeypatch):

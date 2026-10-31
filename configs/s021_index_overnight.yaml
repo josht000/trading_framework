@@ -1,0 +1,25 @@
+symbol: SPY
+start_date: "2016-01-04"
+data_dir: data/cache/daily_10years_raw
+data_suffix: _1Day_raw.parquet
+raw_data_dir: data/cache/daily_10years_raw
+raw_data_suffix: _1Day_raw.parquet
+corporate_actions_file: data/cache/daily_10years_raw/cash_dividends.parquet
+yahoo_data_dir: data/cache/etf_yahoo_2008_2025
+yahoo_data_suffix: _1Day_yahoo.parquet
+tr_data_dir: data/cache/etf_tr
+tr_data_suffix: _1Day_tr.parquet
+participation_filter: none
+cost_bps_per_side: 1.0
+cost_ladder_multipliers: [0.5, 1.0, 2.0, 5.0]
+fills: close_to_open
+partition_split_date: "2024-01-01"
+n_draws: 1000
+n_boot: 5000
+seed: 20261031
+book_slots: 1
+
+variants:
+  sma50: {participation_filter: sma50}
+  qqq: {symbol: QQQ}
+  iwm: {symbol: IWM}

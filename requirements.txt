@@ -2,6 +2,10 @@
 vectorbt[full]==1.1.1
 xgboost==3.4.1
 numba==0.68.0
+ortools==9.15.6755  # CP-SAT integer products for the exact S044 5%-grid risk constraint
+absl-py==2.5.1
+immutabledict==4.3.1
+protobuf==6.33.6
 
 # Alpaca data
 alpaca-py==0.44.0

@@ -410,7 +410,39 @@
       "parameter_variants": "formation cadence {annual primary; quarterly; monthly (ex-S034)}; holding convention {overnight-only primary; full-day; long overnight / short intraday of the same stocks}; extra filter {none primary; negative trailing intraday return (ex-S034, kept only if it improves a hold-out)}; hold {daily overnight primary; one week dropped}",
       "data_needs": "daily_10years raw OHLC (D1) + dividend calendar (DP-CAL) for dividend-correct overnight returns",
       "review": "RESOLVED",
-      "frequency_class": "swing"
+      "frequency_class": "swing",
+      "implementation_results": {
+        "implementation": "src/strategies/s017_night_trading (run.py --strategy s017_night_trading); PIT liquid-top-500, raw bars+dividends in data/cache/daily_10years_raw (957 symbols), annual formation 252-session mean/t-stat, t>2 + BH q=5% + top quintile, equal-weight overnight-only book, 15 bps/side, close_to_open, dev < 2024-01-01 <= test",
+        "results": {
+          "baseline": {
+            "dev_total_log": -2.873,
+            "dev_skill_vs_universe": 0.55,
+            "dev_skill_p": 0.024,
+            "dev_sharpe": -2.34,
+            "dev_max_dd_pct": -94.4,
+            "test_total_log": -0.867,
+            "test_skill_vs_universe": 0.361,
+            "test_sharpe": -2.09,
+            "test_max_dd_pct": -57.9,
+            "trades_dev_test": "31297+9754"
+          },
+          "monthly_s034": {
+            "dev_total_log": -2.157,
+            "dev_skill_vs_universe": 1.635,
+            "dev_skill_p": 0.004,
+            "dev_sharpe": -1.4,
+            "dev_max_dd_pct": -88.5,
+            "test_total_log": -0.991,
+            "test_skill_vs_universe": 0.309,
+            "test_skill_p": 0.024,
+            "test_sharpe": -1.46,
+            "test_max_dd_pct": -62.6,
+            "trades_dev_test": "41014+11457",
+            "note": "monthly formation ex-S034; best dev of 6 variants. Selection beats equal-cost random picks but every config loses net of 15 bps/side; needs auction/commission-free execution"
+          }
+        },
+        "command": "python run.py --strategy s017_night_trading --variant quarterly,monthly_s034,full_day,overnight_intraday,negative_intraday"
+      }
     },
     {
       "id": "S018",
@@ -510,7 +542,33 @@
       "parameter_variants": "filter {none primary, SMA(50) gate}; cost per side {0.5, 1, 2, 5 bps}; weekday table {Mon..Fri overnight returns, incl. ex-S084 Friday-close to Monday-open, both signs}; universe {SPY primary, QQQ, IWM}",
       "data_needs": "SPY raw OHLC + dividends (DP-ETF raw+div)",
       "review": "RESOLVED",
-      "frequency_class": "swing"
+      "frequency_class": "swing",
+      "implementation_results": {
+        "implementation": "src/strategies/s021_index_overnight (run.py --strategy s021_index_overnight); raw SPY bars+dividends in data/cache/daily_10years_raw, unconditional close_to_open, 1 bps/side primary + 0.5/1/2/5 ladder, daily close as MOC proxy, dev < 2024-01-01 <= test",
+        "results": {
+          "baseline": {
+            "dev_total_log": 0.2,
+            "dev_sharpe": 0.27,
+            "dev_max_dd_pct": -29.8,
+            "test_total_log": 0.24,
+            "test_sharpe": 0.93,
+            "test_max_dd_pct": -16.9,
+            "trades_dev_test": "2011+706",
+            "note": "gross overnight null +0.60 dev/+0.38 test; break-even ~1.5bps dev/~2.7bps test; trend-relative skill -0.40 is mechanical (trend=same instrument full exposure)"
+          },
+          "sma50": {
+            "dev_total_log": 0.283,
+            "dev_sharpe": 0.57,
+            "dev_max_dd_pct": -14.6,
+            "test_total_log": 0.183,
+            "test_sharpe": 1.03,
+            "test_max_dd_pct": -5.6,
+            "trades_dev_test": "1400+555",
+            "note": "prior-completed-close gate; dev-selected of 4 variants"
+          }
+        },
+        "command": "python run.py --strategy s021_index_overnight --variant sma50,qqq,iwm"
+      }
     },
     {
       "id": "S023",
@@ -951,7 +1009,33 @@
       "parameter_variants": "mode {replication: Yahoo 2008-2025 matching Tables 2-3; catalog: framework data}; lookback {126-day primary; 6-month/12-month, weekly rebalance (Table 3)}; target vol {5% primary; 10%}",
       "data_needs": "13 ETFs with dividends from 2008 for replication (Yahoo/Stooq one-off); DP-ETF for the framework window; BIL (FRED T-bill before 2007)",
       "review": "KEEP (pipeline replication test) | source OK (verified against attached PDF)",
-      "frequency_class": "slow"
+      "frequency_class": "slow",
+      "implementation_results": {
+        "implementation": "src/strategies/s044_efficiente5 (run.py --strategy s044_efficiente5); 13-ETF TR 2008-2025 (data/cache/etf_yahoo_2008_2025), deterministic discrete integer allocation on 5% grid with all caps (cached frontier + feasibility-masked local search, ~126s baseline vs ~574s naive), 126d lookback, monthly rebalance, 5% vol target + 1%-step escalation, 5 bps/side, next_open primary + close, purged CPCV, dev < 2024-01-01 <= test",
+        "results": {
+          "baseline": {
+            "dev_total_log": 0.561,
+            "dev_sharpe": 0.62,
+            "dev_max_dd_pct": -18.3,
+            "test_total_log": 0.062,
+            "test_sharpe": 0.63,
+            "test_max_dd_pct": -5.0,
+            "trades_dev_test": "1261+157",
+            "note": "published replication target Sharpe 0.50-0.58; in band"
+          },
+          "weekly": {
+            "dev_total_log": 0.359,
+            "dev_sharpe": 0.43,
+            "dev_max_dd_pct": -17.2,
+            "test_total_log": 0.007,
+            "test_sharpe": 0.09,
+            "test_max_dd_pct": -8.7,
+            "trades_dev_test": "5566+688",
+            "note": "Table-3 weekly rebalance; turnover kills it net of costs"
+          }
+        },
+        "command": "python run.py --strategy s044_efficiente5 --variant catalog,lookback12,target10,weekly"
+      }
     },
     {
       "id": "S045",
@@ -1145,7 +1229,32 @@
       "parameter_variants": "cadence {monthly primary; weekly ex-S086 (weeks 3-4 of Jan/Apr/Jul/Oct)}; weighting {equal paper, value research}; sort {volume concentration primary; none}; leg {long announcers - SPY hedge primary; long-short}",
       "data_needs": "SimFin Publish Date 2009+ (DP-EARN); daily_10years (D1)",
       "review": "RESOLVED",
-      "frequency_class": "slow"
+      "frequency_class": "slow",
+      "implementation_results": {
+        "implementation": "src/strategies/s052_earnings_premium (run.py --strategy s052_earnings_premium); SimFin Publish Date expected-announcement calendar (lagged), exactly-4-announcements prior year, announcement-window volume-concentration sort, equal-weight announcer basket + SPY hedge, 15 bps/side, next_open primary + close, dev < 2024-01-01 <= test",
+        "results": {
+          "baseline": {
+            "dev_total_log": 0.13,
+            "dev_sharpe": 0.36,
+            "dev_max_dd_pct": -26.4,
+            "test_total_log": 0.025,
+            "test_sharpe": 0.14,
+            "test_max_dd_pct": -21.7,
+            "trades_dev_test": "995+1006",
+            "note": "premium positive but decayed vs paper's 61bps/mo; all variants DECAYED or negative on test"
+          },
+          "weekly_s086": {
+            "dev_total_log": -0.144,
+            "dev_sharpe": -0.38,
+            "dev_max_dd_pct": -19.8,
+            "test_total_log": -0.103,
+            "test_sharpe": -0.23,
+            "test_max_dd_pct": -26.5,
+            "trades_dev_test": "144+204"
+          }
+        },
+        "command": "python run.py --strategy s052_earnings_premium --variant value_weight,no_sort,long_short,weekly_s086"
+      }
     },
     {
       "id": "S053",
@@ -2260,7 +2369,33 @@
       "parameter_variants": "leverage cap {1x primary; 2x}; resizing {20% band primary; daily}; vol window {20-day overnight primary}",
       "data_needs": "SPY raw OHLC + dividends (DP-ETF raw+div)",
       "review": "KEEP | source OK",
-      "frequency_class": "swing"
+      "frequency_class": "swing",
+      "implementation_results": {
+        "implementation": "src/strategies/s105_overnight_carry (run.py --strategy s105_overnight_carry); S021 dividend-correct overnight series, 20-session overnight vol, 10% target, 1x cap, 20% resize band, 1 bps/side, dev < 2024-01-01 <= test",
+        "results": {
+          "baseline": {
+            "dev_total_log": 0.245,
+            "dev_sharpe": 0.42,
+            "dev_max_dd_pct": -22.3,
+            "test_total_log": 0.22,
+            "test_sharpe": 0.97,
+            "test_max_dd_pct": -13.8,
+            "trades_dev_test": "1991+706",
+            "note": "vs unscaled S021: Sharpe 0.42 vs 0.27 dev, DD -22% vs -30%; ~0.91 mean exposure, 42+11 resize events"
+          },
+          "cap2x": {
+            "dev_total_log": 0.273,
+            "dev_sharpe": 0.38,
+            "dev_max_dd_pct": -24.5,
+            "test_total_log": 0.3,
+            "test_sharpe": 0.97,
+            "test_max_dd_pct": -15.6,
+            "trades_dev_test": "1991+706",
+            "note": "more return, no Sharpe gain"
+          }
+        },
+        "command": "python run.py --strategy s105_overnight_carry --variant cap2x,daily_resize"
+      }
     }
   ]
 }

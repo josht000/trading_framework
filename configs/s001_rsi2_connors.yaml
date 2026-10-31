@@ -1,6 +1,6 @@
 data_dir: data/cache/etf_tr
 data_suffix: _1Day_tr.parquet
-symbols: SPY,QQQ,IWM,DIA,XLB,XLC,XLE,XLF,XLI,XLK,XLP,XLRE,XLU,XLV,XLY
+symbols: QQQ,IWM,DIA,XLB,XLC,XLE,XLF,XLI,XLK,XLP,XLRE,XLU,XLV,XLY
 min_history: 250
 rsi_len: 2
 rsi_threshold: 10

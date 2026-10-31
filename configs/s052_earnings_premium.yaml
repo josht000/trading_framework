@@ -1,0 +1,31 @@
+data_dir: data/cache/daily_10years_tr
+data_suffix: _1Day_tr.parquet
+price_data_dir: data/cache/daily_10years
+price_data_suffix: _1Day_split.parquet
+spy_data_dir: data/cache/etf_tr
+spy_data_suffix: _1Day_tr.parquet
+earnings_file: data/simfin/us-income-quarterly.csv
+
+min_price: 5.0
+min_history: 250
+cadence: monthly
+volume_lookback_months: 48
+volume_lag_months: 3
+volume_quintile: 0.20
+sort_mode: volume
+weighting: equal
+leg: long_spy_hedge
+delisting_return: -0.30
+cost_bps_per_side: 15.0
+fills: next_open,close
+partition_split_date: "2024-01-01"
+n_draws: 1000
+n_boot: 5000
+seed: 20261031
+book_slots: 1
+
+variants:
+  value_weight: {weighting: value}
+  no_sort: {sort_mode: none}
+  long_short: {leg: long_short}
+  weekly_s086: {cadence: weekly}

@@ -33,16 +33,29 @@ def expand_positions(entry_idx, exit_idx):
     return trade, day, offset == 0, day == exit_idx[trade]
 
 
-def account_series(expansion, cols, entry_px, exit_px, close_ff, cost, n_rows, slots=1):
-    """Daily account return and session position count; each position weighs 1 / max(open positions, slots)."""
+def account_series(expansion, cols, entry_px, exit_px, close_ff, cost, n_rows, slots=1, trade_weights=None,
+                   entry_cost_weights=None, exit_cost_weights=None):
+    """Daily account returns; optional signed trade weights express fixed portfolio fractions."""
     trade, day, first, last = expansion
     c = cols[trade]
-    start = np.where(first, entry_px[trade] * (1 + cost), close_ff[np.maximum(day - 1, 0), c])
-    end = np.where(last, exit_px[trade] * (1 - cost), close_ff[day, c])
-    ret = end / start - 1.0
-    sums = np.bincount(day, ret, minlength=n_rows)
     count = np.bincount(day, minlength=n_rows).astype(float)
-    r_day = sums / np.maximum(count, slots)
+    start = np.where(first, entry_px[trade], close_ff[np.maximum(day - 1, 0), c])
+    end = np.where(last, exit_px[trade], close_ff[day, c])
+    ret = end / start - 1.0
+    if trade_weights is None:
+        start = np.where(first, start * (1 + cost), start)
+        end = np.where(last, end * (1 - cost), end)
+        ret = end / start - 1.0
+        sums = np.bincount(day, ret, minlength=n_rows)
+        r_day = sums / np.maximum(count, slots)
+    else:
+        weights = np.asarray(trade_weights, dtype=float)[trade]
+        entry_fees = np.abs(trade_weights) if entry_cost_weights is None else np.asarray(entry_cost_weights, dtype=float)
+        exit_fees = np.abs(trade_weights) if exit_cost_weights is None else np.asarray(exit_cost_weights, dtype=float)
+        pnl = weights * ret - cost * (
+            entry_fees[trade] * first.astype(float) + exit_fees[trade] * last.astype(float)
+        )
+        r_day = np.bincount(day, pnl, minlength=n_rows)
     return r_day, count
 
 
@@ -55,23 +68,29 @@ def candidate_matrix(mask):
 
 
 def random_books(expansion, real_cols, signal_idx, entry_idx, exit_idx, cand, count, entry_mat, exit_mat,
-                 close_ff, cost, n_rows, masks, n_draws, seed, slots=1):
+                 close_ff, cost, n_rows, masks, n_draws, seed, slots=1, trade_weights=None, fixed_mask=None,
+                 entry_cost_weights=None, exit_cost_weights=None):
     """Totals per draw and period, plus the mean per-session log return across draws."""
     rng = np.random.default_rng(seed)
     totals = np.zeros((n_draws, len(masks)))
     mean_log = np.zeros(n_rows)
     n = len(real_cols)
     cnt = count[signal_idx]
+    fixed = np.asarray(fixed_mask, dtype=bool) if fixed_mask is not None else np.zeros(n, dtype=bool)
     for k in range(n_draws):
         cols = cand[signal_idx, (rng.random(n) * cnt).astype(int)].astype(np.int64)
+        cols[fixed] = real_cols[fixed]
         for _ in range(8):
             bad = np.isnan(entry_mat[entry_idx, cols]) | np.isnan(exit_mat[exit_idx, cols])
             if not bad.any():
                 break
             cols[bad] = cand[signal_idx[bad], (rng.random(int(bad.sum())) * cnt[bad]).astype(int)]
+            cols[fixed] = real_cols[fixed]
         bad = np.isnan(entry_mat[entry_idx, cols]) | np.isnan(exit_mat[exit_idx, cols])
         cols[bad] = real_cols[bad]
-        r_day, _ = account_series(expansion, cols, entry_mat[entry_idx, cols], exit_mat[exit_idx, cols], close_ff, cost, n_rows, slots)
+        r_day, _ = account_series(expansion, cols, entry_mat[entry_idx, cols], exit_mat[exit_idx, cols],
+                                  close_ff, cost, n_rows, slots, trade_weights=trade_weights,
+                                  entry_cost_weights=entry_cost_weights, exit_cost_weights=exit_cost_weights)
         log_r = np.log1p(r_day)
         mean_log += log_r
         for m, mask in enumerate(masks):
@@ -147,14 +166,28 @@ def evaluate_fill(trades, book, masks, universe, pool, n_eff, cfg, seed=SEED, bi
     exit_ = trades["exit_idx"].to_numpy(np.int64)
     sym = trades["sym_idx"].to_numpy(np.int64)
     sig = trades["signal_idx"].to_numpy(np.int64)
+    trade_weights = trades["trade_weight"].to_numpy(float) if "trade_weight" in trades else None
+    fixed_mask = trades["random_fixed"].to_numpy(bool) if "random_fixed" in trades else None
+    entry_cost_weights = trades["entry_cost_weight"].to_numpy(float) if "entry_cost_weight" in trades else None
+    exit_cost_weights = trades["exit_cost_weight"].to_numpy(float) if "exit_cost_weight" in trades else None
     expansion = expand_positions(entry, exit_)
     with timing.stage("account"):
         r_day, count = account_series(expansion, sym, trades["entry_px"].to_numpy(float), trades["exit_px"].to_numpy(float),
-                                      book["close_ff"], cost, n_rows, slots)
-        f_day = count / np.maximum(count, slots)
-        safe = np.maximum(count, slots)
-        entry_w = np.bincount(entry, 1.0 / safe[entry], minlength=n_rows)
-        exit_w = np.bincount(exit_, 1.0 / safe[exit_], minlength=n_rows)
+                                      book["close_ff"], cost, n_rows, slots, trade_weights=trade_weights,
+                                      entry_cost_weights=entry_cost_weights, exit_cost_weights=exit_cost_weights)
+        if trade_weights is None:
+            f_day = count / np.maximum(count, slots)
+            safe = np.maximum(count, slots)
+            entry_w = np.bincount(entry, 1.0 / safe[entry], minlength=n_rows)
+            exit_w = np.bincount(exit_, 1.0 / safe[exit_], minlength=n_rows)
+        else:
+            trade, day, _, _ = expansion
+            gross_exposure = np.bincount(day, np.abs(trade_weights[trade]), minlength=n_rows)
+            f_day = np.asarray(book.get("trend_exposure", gross_exposure), dtype=float)
+            fee_entries = np.abs(trade_weights) if entry_cost_weights is None else entry_cost_weights
+            fee_exits = np.abs(trade_weights) if exit_cost_weights is None else exit_cost_weights
+            entry_w = np.bincount(entry, fee_entries, minlength=n_rows)
+            exit_w = np.bincount(exit_, fee_exits, minlength=n_rows)
     names = list(masks)
     mask_list = [masks[k] for k in names]
     random = {}
@@ -162,7 +195,9 @@ def evaluate_fill(trades, book, masks, universe, pool, n_eff, cfg, seed=SEED, bi
         with timing.stage(f"random picks {label}"):
             cand, cnt = candidate_matrix(cands)
             random[label] = random_books(expansion, sym, sig, entry, exit_, cand, cnt, book["entry_mat"], book["exit_mat"],
-                                         book["close_ff"], cost, n_rows, mask_list, int(cfg["n_draws"]), seed + offset, slots)
+                                         book["close_ff"], cost, n_rows, mask_list, int(cfg["n_draws"]), seed + offset, slots,
+                                         trade_weights=trade_weights, fixed_mask=fixed_mask,
+                                         entry_cost_weights=entry_cost_weights, exit_cost_weights=exit_cost_weights)
     results = {}
     period_of = np.full(n_rows, -1)
     for m, mask in enumerate(mask_list):
@@ -176,8 +211,12 @@ def evaluate_fill(trades, book, masks, universe, pool, n_eff, cfg, seed=SEED, bi
         keep[top5.to_numpy()] = False
         with timing.stage("ex5 account"):
             sub = trades[keep]
+            sub_weights = sub["trade_weight"].to_numpy(float) if "trade_weight" in sub else None
             r_ex5, _ = account_series(expand_positions(sub["entry_idx"], sub["exit_idx"]), sub["sym_idx"].to_numpy(np.int64),
-                                      sub["entry_px"].to_numpy(float), sub["exit_px"].to_numpy(float), book["close_ff"], cost, n_rows, slots)
+                                      sub["entry_px"].to_numpy(float), sub["exit_px"].to_numpy(float), book["close_ff"],
+                                      cost, n_rows, slots, trade_weights=sub_weights,
+                                      entry_cost_weights=sub["entry_cost_weight"].to_numpy(float) if "entry_cost_weight" in sub else None,
+                                      exit_cost_weights=sub["exit_cost_weight"].to_numpy(float) if "exit_cost_weight" in sub else None)
         rnd = {k: (v[0][:, m], v[1]) for k, v in random.items()}
         with timing.stage("bootstrap"):
             results[name] = partition_period(r_day, f_day, count, book["b_day"], mask_list[m], trades[sel], rnd, bias, r_ex5,

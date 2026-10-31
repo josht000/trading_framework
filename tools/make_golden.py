@@ -11,8 +11,8 @@ import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-NAMES = ("trades_close.csv", "trades_next_open.csv", "trade_summary.csv",
-         "partition_dev.csv", "partition_test.csv", "partition_report.md")
+NAMES = ("trade_summary.csv", "partition_dev.csv", "partition_test.csv",
+         "partition_report.md")
 
 
 def sha256(path):
@@ -26,13 +26,14 @@ def make_golden(study, variant="baseline", root=ROOT):
     manifest_path = out / "MANIFEST.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {"study": study, "files": []}
     new_files = []
-    for name in NAMES:
-        src = Path(root) / "results" / study / f"{prefix}{name}"
+    sources = sorted((Path(root) / "results" / study).glob(f"{prefix}trades_*.csv"))
+    sources += [Path(root) / "results" / study / f"{prefix}{name}" for name in NAMES]
+    for src in sources:
         if not src.exists():
             continue
         shutil.copyfile(src, out / src.name)
         rows = sum(1 for _ in src.open(encoding="utf-8")) - 1
-        new_files.append({"file": src.name, "source": f"results/{study}/{prefix}{name}",
+        new_files.append({"file": src.name, "source": f"results/{study}/{src.name}",
                           "sha256": sha256(src), "rows": rows, "deterministic": True})
     if not new_files:
         raise FileNotFoundError(f"no outputs found for {study}:{variant} under results/{study}")

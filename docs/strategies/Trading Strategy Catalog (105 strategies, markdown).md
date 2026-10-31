@@ -33,11 +33,11 @@
 - [Family 2 — Overnight and Gap Strategies](#family-2--overnight-and-gap-strategies)
     - [S015 | Chan Buy-on-Gap (absorbs S022)](#s015--chan-buy-on-gap-absorbs-s022)
     - [S016 | Short-on-Gap-Up (Chan mirror)](#s016--short-on-gap-up-chan-mirror)
-    - [S017 | Night Trading Overnight-Bias Stock Selection (absorbs S034)](#s017--night-trading-overnight-bias-stock-selection-absorbs-s034)
+    - [S017 | Night Trading Overnight-Bias Stock Selection (absorbs S034)](#s017--night-trading-overnight-bias-stock-selection-absorbs-s034) — IMPLEMENTED
     - [S018 | Gap Fade (Fill the Gap)](#s018--gap-fade-fill-the-gap)
     - [S019 | Gap-and-Go Continuation (absorbs S025)](#s019--gap-and-go-continuation-absorbs-s025)
     - [S020 | Earnings-Eve Estimate-Drift Mean Reversion (Chan/Estimize)](#s020--earnings-eve-estimate-drift-mean-reversion-chanestimize)
-    - [S021 | Index Overnight Premium (SPY close-to-open only; absorbs S084)](#s021--index-overnight-premium-spy-close-to-open-only-absorbs-s084)
+    - [S021 | Index Overnight Premium (SPY close-to-open only; absorbs S084)](#s021--index-overnight-premium-spy-close-to-open-only-absorbs-s084) — IMPLEMENTED
     - [S023 | Post-Earnings Overnight Drift](#s023--post-earnings-overnight-drift)
     - [S024 | Ex-Dividend Window Capture (absorbs S101)](#s024--ex-dividend-window-capture-absorbs-s101)
     - [S026 | Exhaustion Gap Fade After 3-Day Run](#s026--exhaustion-gap-fade-after-3-day-run)
@@ -57,7 +57,7 @@
     - [S041 | 12-1 Cross-Sectional Momentum](#s041--12-1-cross-sectional-momentum) — IMPLEMENTED
     - [S042 | Sector Momentum Rotation](#s042--sector-momentum-rotation) — IMPLEMENTED
     - [S043 | ETF Multi-Asset Momentum Rotation (absorbs S068, S074)](#s043--etf-multi-asset-momentum-rotation-absorbs-s068-s074)
-    - [S044 | Efficiente 5 MPT Replication](#s044--efficiente-5-mpt-replication)
+    - [S044 | Efficiente 5 MPT Replication](#s044--efficiente-5-mpt-replication) — IMPLEMENTED
     - [S045 | Multi-Factor Characteristic Blend (US Adaptation; S045a paper design, S045b catalog design)](#s045--multi-factor-characteristic-blend-us-adaptation-s045a-paper-design-s045b-catalog-design)
     - [S046 | Industry Rotation via Market-State Similarity](#s046--industry-rotation-via-market-state-similarity)
     - [S047 | Absolute / Dual Momentum (S047a absolute SPY vs cash; S047b Antonacci GEM)](#s047--absolute--dual-momentum-s047a-absolute-spy-vs-cash-s047b-antonacci-gem)
@@ -66,7 +66,7 @@
     - [S050 | First Pullback After Breakout](#s050--first-pullback-after-breakout)
     - [S051 | Darvas Box Breakout](#s051--darvas-box-breakout)
 - [Family 5 — Earnings, News, and LLM Strategies](#family-5--earnings-news-and-llm-strategies)
-    - [S052 | Earnings Announcement Premium (Monthly; absorbs S086 weekly version)](#s052--earnings-announcement-premium-monthly-absorbs-s086-weekly-version)
+    - [S052 | Earnings Announcement Premium (Monthly; absorbs S086 weekly version)](#s052--earnings-announcement-premium-monthly-absorbs-s086-weekly-version) — IMPLEMENTED
     - [S053 | Pre-Earnings Run-Up (consensus-free; replaces the Earnings Whispers Score setup)](#s053--pre-earnings-run-up-consensus-free-replaces-the-earnings-whispers-score-setup)
     - [S054 | PEAD Earnings-Surprise Drift (SUE / announcement-return, point-in-time)](#s054--pead-earnings-surprise-drift-sue--announcement-return-point-in-time)
     - [S055 | Post-Earnings-Oversold Bounce](#s055--post-earnings-oversold-bounce)
@@ -117,7 +117,7 @@
     - [S102 | Copper/Gold Ratio Equity Tilt (CPER/GLD ratio, both in cache)](#s102--coppergold-ratio-equity-tilt-cpergld-ratio-both-in-cache)
     - [S103 | Yield-Curve Financials/Utilities Rotation](#s103--yield-curve-financialsutilities-rotation)
     - [S104 | High-Beta/Momentum Crash Protection (overlay comparison on S041)](#s104--high-betamomentum-crash-protection-overlay-comparison-on-s041)
-    - [S105 | Volatility-Targeted Overnight Carry](#s105--volatility-targeted-overnight-carry)
+    - [S105 | Volatility-Targeted Overnight Carry](#s105--volatility-targeted-overnight-carry) — IMPLEMENTED
   - [Appendix - Source index](#appendix--source-index)
 
 ---
@@ -552,6 +552,13 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - merged_from: S034
 - data_needs: daily_10years raw OHLC (D1) + dividend calendar (DP-CAL) for dividend-correct overnight returns
 - review: RESOLVED
+- implementation_results: `src/strategies/s017_night_trading`; PIT liquid-top-500 universe (957 symbols with raw bars + dividend events in `data/cache/daily_10years_raw`), annual formation on the trailing-252-session mean/t-stat with t>2 + BH q=5% + top-quintile screen, equal-weight overnight-only book next calendar year, 15 bps/side, close_to_open, dev < 2024-01-01 <= test. `monthly_s034` = monthly formation (ex-S034; best dev of 6 registered variants): selection beats equal-cost random picks (+1.64 dev, +0.31 test, p=0.004/0.024) but every configuration loses heavily net of 15 bps/side - the overnight bias (~+0.9 log gross dev, ~+4-5%/yr) is far below realistic stock round-trip costs; viable only with auction/commission-free execution. Skill below is vs the same universe at equal cost (positive = selection works); trend-relative skill is mechanically negative since overnight-only books earn less than the full-day universe.
+
+  | variant | dev total (log) | dev skill | dev Sharpe | dev max DD | test total (log) | test skill | test Sharpe | test max DD | trades (dev+test) |
+  |---|---|---|---|---|---|---|---|---|---|
+  | baseline (close_to_open) | -2.87 | +0.55 (p=0.024) | -2.34 | -94% | -0.87 | +0.36 | -2.09 | -58% | 31297+9754 |
+  | monthly_s034 (close_to_open) | -2.16 | +1.64 (p=0.004) | -1.40 | -88% | -0.99 | +0.31 (p=0.024) | -1.46 | -63% | 41014+11457 |
+  Reproduce: baseline `python run.py --strategy s017_night_trading`; variants `python run.py --strategy s017_night_trading --variant quarterly,monthly_s034,full_day,overnight_intraday,negative_intraday`
 
 ### S018 | Gap Fade (Fill the Gap)
 - family: overnight and gap
@@ -629,6 +636,13 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - merged_from: S084
 - data_needs: SPY raw OHLC + dividends (DP-ETF raw+div)
 - review: RESOLVED
+- implementation_results: `src/strategies/s021_index_overnight`; raw SPY bars + dividend events in `data/cache/daily_10years_raw` (open(t+1)+div)/close(t)-1, 2016-2026, 1 bps/side primary with 0.5/1/2/5 ladder, dev < 2024-01-01 <= test; daily close proxies the MOC auction (minute bars unavailable pre-2023). `sma50` = close > SMA(50) gate on the prior completed close (dev-selected of 4 registered variants: Sharpe 0.57 vs 0.27 dev on fewer trades). Gross overnight carry +0.60 dev/+0.38 test vs buy-and-hold TR +0.99/+0.50 - the premium is real but thin: break-even ~1.5 bps/side dev (~2.7 test), so it survives only auction-grade execution; 5 bps/side loses as predicted. Weekday decomposition + ex-S084 weekend slice live in `results/s021_index_overnight/` (Tue +0.08%, Wed +0.06% means dev; Thursday ~0). Trend-relative skill is mechanically negative (trend = same instrument at full exposure); skill_vs_pool ~ 0 for the unconditional rule.
+
+  | variant | dev total (log) | dev Sharpe | dev max DD | test total (log) | test Sharpe | test max DD | trades (dev+test) |
+  |---|---|---|---|---|---|---|---|
+  | baseline (close_to_open, 1bps) | +0.20 | 0.27 | -30% | +0.24 | 0.93 | -17% | 2011+706 |
+  | sma50 (close_to_open, 1bps) | +0.28 | 0.57 | -15% | +0.18 | 1.03 | -6% | 1400+555 |
+  Reproduce: baseline `python run.py --strategy s021_index_overnight`; variants `python run.py --strategy s021_index_overnight --variant sma50,qqq,iwm`
 
 ### S023 | Post-Earnings Overnight Drift
 - family: overnight and gap
@@ -1005,6 +1019,13 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: mode {replication: Yahoo 2008-2025 matching Tables 2-3; catalog: framework data}; lookback {126-day primary; 6-month/12-month, weekly rebalance (Table 3)}; target vol {5% primary; 10%}
 - data_needs: 13 ETFs with dividends from 2008 for replication (Yahoo/Stooq one-off); DP-ETF for the framework window; BIL (FRED T-bill before 2007)
 - review: KEEP (pipeline replication test) | source OK (verified against attached PDF)
+- implementation_results: `src/strategies/s044_efficiente5`; 13-ETF TR history 2008-2025 (`data/cache/etf_yahoo_2008_2025`), deterministic discrete integer allocation over the 5% weight grid with all per-asset/class caps (cached enumerable frontier + feasibility-masked local search: ~205-915 solver calls/run, ~126s baseline vs ~574s naive enumeration - no external optimizer needed), 126-day lookback, monthly rebalance, 5% target vol with 1%-step escalation to 50%, 5 bps/side, next_open primary + close, dev < 2024-01-01 <= test. Baseline Sharpe 0.62 dev / 0.63 test vs the published replication target 0.50-0.58 - squarely in band. Purged CPCV (6 groups x choose-2, 1-month purge) and per-rebalance weights in `results/s044_efficiente5/`. `weekly` (ex-Table-3 weekly rebalance) degrades to Sharpe 0.09 test net of costs - turnover kills it; monthly stays primary. `catalog` (2016+ DP-ETF window) confirms framework-data consistency.
+
+  | variant | dev total (log) | dev Sharpe | dev max DD | test total (log) | test Sharpe | test max DD | trades (dev+test) |
+  |---|---|---|---|---|---|---|---|
+  | baseline (next_open) | +0.56 | 0.62 | -18% | +0.06 | 0.63 | -5% | 1261+157 |
+  | weekly (next_open) | +0.36 | 0.43 | -17% | +0.01 | 0.09 | -9% | 5566+688 |
+  Reproduce: baseline `python run.py --strategy s044_efficiente5`; variants `python run.py --strategy s044_efficiente5 --variant catalog,lookback12,target10,weekly`
 
 ### S045 | Multi-Factor Characteristic Blend (US Adaptation; S045a paper design, S045b catalog design)
 - family: momentum and breakout
@@ -1163,6 +1184,13 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - merged_from: S086
 - data_needs: SimFin Publish Date 2009+ (DP-EARN); daily_10years (D1)
 - review: RESOLVED
+- implementation_results: `src/strategies/s052_earnings_premium`; SimFin Publish Date calendar (expected announcements = prior-year dates shifted ~1y, lagged for public availability), exactly-4-announcements prior year, announcement-window volume-concentration sort, equal-weight announcer basket hedged with SPY, 15 bps/side, next_open primary + close, dev < 2024-01-01 <= test. Baseline is positive but the premium has decayed vs the paper's 61bps/month (dev +0.13/Sharpe 0.36; test +0.02/0.14) and every registered variant is worse on test: `value_weight` -0.25, `no_sort` -0.13, `long_short` -0.15 (all DECAYED), `weekly_s086` negative on both partitions. Keep baseline only.
+
+  | variant | dev total (log) | dev Sharpe | dev max DD | test total (log) | test Sharpe | test max DD | trades (dev+test) |
+  |---|---|---|---|---|---|---|---|
+  | baseline (next_open) | +0.13 | 0.36 | -26% | +0.02 | 0.14 | -22% | 995+1006 |
+  | weekly_s086 (next_open) | -0.14 | -0.38 | -20% | -0.10 | -0.23 | -27% | 144+204 |
+  Reproduce: baseline `python run.py --strategy s052_earnings_premium`; variants `python run.py --strategy s052_earnings_premium --variant value_weight,no_sort,long_short,weekly_s086`
 
 ### S053 | Pre-Earnings Run-Up (consensus-free; replaces the Earnings Whispers Score setup)
 - family: earnings (calendar-driven)
@@ -2045,6 +2073,13 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: leverage cap {1x primary; 2x}; resizing {20% band primary; daily}; vol window {20-day overnight primary}
 - data_needs: SPY raw OHLC + dividends (DP-ETF raw+div)
 - review: KEEP | source OK
+- implementation_results: `src/strategies/s105_overnight_carry`; same dividend-correct close-to-open series as S021, 20-session overnight realized vol, 10% target, 1x cap, 20% resize band, 1 bps/side, dev < 2024-01-01 <= test. Vol targeting works as hypothesized on the risk side: mean exposure ~0.91, only 42 dev/11 test resize events, Sharpe 0.42 vs unscaled S021's 0.27 dev (0.97 vs 0.93 test), max DD -22% vs -30% dev. Total return is similar to unscaled (the levered upside in calm regimes roughly offsets the de-risked stress windows); the benefit is smoother equity, not more return. `cap2x` adds return without improving Sharpe; `daily_resize` adds turnover for nothing - baseline stays primary.
+
+  | variant | dev total (log) | dev Sharpe | dev max DD | test total (log) | test Sharpe | test max DD | trades (dev+test) |
+  |---|---|---|---|---|---|---|---|
+  | baseline (close_to_open) | +0.24 | 0.42 | -22% | +0.22 | 0.97 | -14% | 1991+706 |
+  | cap2x (close_to_open) | +0.27 | 0.38 | -25% | +0.30 | 0.97 | -16% | 1991+706 |
+  Reproduce: baseline `python run.py --strategy s105_overnight_carry`; variants `python run.py --strategy s105_overnight_carry --variant cap2x,daily_resize`
 
 ---
 

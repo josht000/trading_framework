@@ -121,6 +121,28 @@ def test_account_compounds_to_trade_return():
     assert r2[2] == pytest.approx((9.5 / 9.0 - 1) / 4)
 
 
+def test_weighted_account_supports_long_short_fractions_and_costs():
+    close = np.full((3, 1), 10.0)
+    expansion = DP.expand_positions([1], [1])
+    long, count = DP.account_series(
+        expansion, np.array([0]), np.array([100.0]), np.array([110.0]),
+        close, 0.001, 3, trade_weights=np.array([0.25]),
+    )
+    short, _ = DP.account_series(
+        expansion, np.array([0]), np.array([100.0]), np.array([110.0]),
+        close, 0.001, 3, trade_weights=np.array([-0.5]),
+    )
+    assert long[1] == pytest.approx(0.25 * 0.1 - 2 * 0.001 * 0.25)
+    assert short[1] == pytest.approx(-0.5 * 0.1 - 2 * 0.001 * 0.5)
+    assert count[1] == 1
+    reduced_turnover, _ = DP.account_series(
+        expansion, np.array([0]), np.array([100.0]), np.array([110.0]),
+        close, 0.001, 3, trade_weights=np.array([0.5]),
+        entry_cost_weights=np.array([0.1]), exit_cost_weights=np.array([0.2]),
+    )
+    assert reduced_turnover[1] == pytest.approx(0.5 * 0.1 - 0.001 * 0.3)
+
+
 def test_partition_identity_and_determinism():
     panel, sector_map = synthetic_panel(n_rows=420)
     cfg = small_cfg(cost_bps_per_side=5.0, book_slots=5)

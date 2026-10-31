@@ -85,7 +85,10 @@ def _account(trades, book):
     return DP.account_series(DP.expand_positions(trades["entry_idx"], trades["exit_idx"]),
                              trades["sym_idx"].to_numpy(np.int64),
                              trades["entry_px"].to_numpy(float), trades["exit_px"].to_numpy(float),
-                             book["close_ff"], book["cost"], book["n_rows"], int(book.get("slots", 1)))
+                             book["close_ff"], book["cost"], book["n_rows"], int(book.get("slots", 1)),
+                             trade_weights=trades["trade_weight"].to_numpy(float) if "trade_weight" in trades else None,
+                             entry_cost_weights=trades["entry_cost_weight"].to_numpy(float) if "entry_cost_weight" in trades else None,
+                             exit_cost_weights=trades["exit_cost_weight"].to_numpy(float) if "exit_cost_weight" in trades else None)
 
 
 def cost_ladder(trades, book, masks, multipliers=(0.5, 1.0, 2.0, 3.0)):
@@ -96,7 +99,10 @@ def cost_ladder(trades, book, masks, multipliers=(0.5, 1.0, 2.0, 3.0)):
     rows = []
     for mult in multipliers:
         r_day, _ = DP.account_series(expansion, cols, entry, exit_, book["close_ff"], book["cost"] * mult,
-                                     book["n_rows"], int(book.get("slots", 1)))
+                                     book["n_rows"], int(book.get("slots", 1)),
+                                     trade_weights=trades["trade_weight"].to_numpy(float) if "trade_weight" in trades else None,
+                                     entry_cost_weights=trades["entry_cost_weight"].to_numpy(float) if "entry_cost_weight" in trades else None,
+                                     exit_cost_weights=trades["exit_cost_weight"].to_numpy(float) if "exit_cost_weight" in trades else None)
         for name, mask in masks.items():
             r = r_day[mask]
             sd = r.std(ddof=1) if len(r) > 1 else np.nan
@@ -114,6 +120,9 @@ def random_timing(trades, book, masks, first_row, last_row_by_col, n_draws=500, 
     rng = np.random.default_rng(seed + 31)
     sym = trades["sym_idx"].to_numpy(np.int64)
     hold = (trades["exit_idx"] - trades["entry_idx"]).to_numpy(np.int64)
+    trade_weights = trades["trade_weight"].to_numpy(float) if "trade_weight" in trades else None
+    entry_cost_weights = trades["entry_cost_weight"].to_numpy(float) if "entry_cost_weight" in trades else None
+    exit_cost_weights = trades["exit_cost_weight"].to_numpy(float) if "exit_cost_weight" in trades else None
     n = len(trades)
     n_rows = book["n_rows"]
     totals = np.zeros((n_draws, len(masks)))
@@ -121,9 +130,10 @@ def random_timing(trades, book, masks, first_row, last_row_by_col, n_draws=500, 
     mask_list = [masks[k] for k in masks]
     groups = {s: np.flatnonzero(sym == s) for s in np.unique(sym)}
     for k in range(n_draws):
-        keep_sym, keep_e, keep_x = [], [], []
+        keep_sym, keep_e, keep_x, keep_ids = [], [], [], []
         for s, grp in groups.items():
             placed = []
+            occupied_days = set()
             for i in grp:
                 h = int(hold[i])
                 last = last_row_by_col[s]
@@ -132,18 +142,27 @@ def random_timing(trades, book, masks, first_row, last_row_by_col, n_draws=500, 
                     x = min(e + h, last)
                     if x < e or e > last or not np.isfinite(entry_mat[e, s]) or not np.isfinite(exit_mat[x, s]):
                         continue
-                    if any(e < px and x > pe for pe, px in placed):
+                    if h == 0:
+                        if e in occupied_days:
+                            continue
+                        occupied_days.add(e)
+                    elif any(e < px and x > pe for pe, px in placed):
                         continue
                     placed.append((e, x))
                     keep_sym.append(s)
                     keep_e.append(e)
                     keep_x.append(x)
+                    keep_ids.append(i)
                     break
         if not keep_e:
             continue
         expansion = DP.expand_positions(np.asarray(keep_e), np.asarray(keep_x))
         r_day, _ = DP.account_series(expansion, np.asarray(keep_sym), entry_mat[keep_e, keep_sym],
-                                     exit_mat[keep_x, keep_sym], close_ff, book["cost"], n_rows, int(book.get("slots", 1)))
+                                     exit_mat[keep_x, keep_sym], close_ff, book["cost"], n_rows,
+                                     int(book.get("slots", 1)),
+                                     trade_weights=trade_weights[keep_ids] if trade_weights is not None else None,
+                                     entry_cost_weights=entry_cost_weights[keep_ids] if entry_cost_weights is not None else None,
+                                     exit_cost_weights=exit_cost_weights[keep_ids] if exit_cost_weights is not None else None)
         log_r = np.log1p(r_day)
         for m, mask in enumerate(mask_list):
             totals[k, m] = log_r[mask].sum()
@@ -200,7 +219,10 @@ def evaluate_study(ctx, name, title, state, cfg, *, trades, books, masks, univer
 
     primary = fills[0]
     with timing.stage("cost ladder"):
-        ladder = cost_ladder(trades[primary], books[primary], masks)
+        ladder = cost_ladder(
+            trades[primary], books[primary], masks,
+            multipliers=tuple(cfg.get("cost_ladder_multipliers", (0.5, 1.0, 2.0, 3.0))),
+        )
     ladder.insert(0, "fill", primary)
     ladder.to_csv(out / f"{pre}cost_ladder.csv", index=False)
 
@@ -267,6 +289,7 @@ def render_dashboard(ctx, name):
         state["first_row"],
         state["split_row"],
         n_trials_note="Dev bias = selection haircut (fills); the cross-variant haircut is in variants_comparison.csv. Test bias = 0 by construction.",
+        benchmarks=state.get("benchmarks"),
     )
 
 
@@ -284,19 +307,28 @@ def daily_state(ctx, name, cfg, load_fn, signals_fn, trades_fn):
     split_row = int(np.searchsorted(panel["dates"].values, pd.Timestamp(cfg["partition_split_date"]).to_datetime64()))
     tradable = sig["tradable"]
     first = int(np.argmax(tradable.any(1))) if tradable.any() else 0
+    if cfg.get("evaluation_start_date"):
+        requested_start = int(np.searchsorted(
+            panel["dates"].values, pd.Timestamp(cfg["evaluation_start_date"]).to_datetime64()
+        ))
+        first = max(first, requested_start)
     rows = np.arange(n_rows)
     masks = {"dev": (rows >= first) & (rows < split_row), "test": rows >= split_row}
     ret = np.full(panel["close"].shape, np.nan)
     ret[1:] = panel["close"][1:] / panel["close"][:-1] - 1.0
     live = tradable & np.isfinite(ret)
-    b_day = np.where(live, np.nan_to_num(ret), 0.0).sum(1) / np.maximum(live.sum(1), 1)
+    default_b_day = np.where(live, np.nan_to_num(ret), 0.0).sum(1) / np.maximum(live.sum(1), 1)
+    b_day = np.asarray(sig.get("benchmark_returns", default_b_day), dtype=float)
+    if b_day.shape != (n_rows,):
+        raise ValueError("benchmark_returns must have one return per panel date")
     trades = {}
     with timing.stage("trades"):
         for fill in fills_of(cfg):
             trades[fill] = trades_fn(panel, sig, cfg, fill)
     state = {"panel": panel, "sig": sig, "b_day": b_day,
              "close_ff": pd.DataFrame(panel["close"]).ffill().to_numpy(),
-             "masks": masks, "trades": trades, "first_row": first, "split_row": split_row, "dates": panel["dates"], "aux": aux}
+             "masks": masks, "trades": trades, "first_row": first, "split_row": split_row, "dates": panel["dates"],
+             "aux": aux, "benchmarks": sig.get("benchmarks", aux.get("benchmarks", {}))}
     ctx.data[name] = state
     return state
 
@@ -348,7 +380,9 @@ class DailyStudy(Strategy):
         mat = panel["open"] if fill == "next_open" else panel["close"]
         return {"close_ff": state["close_ff"], "entry_mat": mat, "exit_mat": mat,
                 "cost": float(cfg["cost_bps_per_side"]) / 1e4, "n_rows": len(panel["dates"]),
-                "b_day": state["b_day"], "slots": int(cfg["book_slots"])}
+                "b_day": state["b_day"], "slots": int(cfg["book_slots"]),
+                **({"trend_exposure": state["sig"]["trend_exposure"]}
+                   if "trend_exposure" in state["sig"] else {})}
 
     def rank_col(self):
         return "ret_gross"
@@ -446,6 +480,9 @@ def _daily_returns(out, state, series, cfg, pre):
     data = {"date": dates, "b_day": state["b_day"]}
     for fill, s in series.items():
         data[f"{fill}_r_day"], data[f"{fill}_positions"] = s["r_day"], s["count"]
+    for name, returns in state.get("benchmarks", {}).items():
+        key = "".join(c.lower() if c.isalnum() else "_" for c in str(name)).strip("_")
+        data[f"benchmark_{key}_r_day"] = np.asarray(returns, dtype=float)
     pd.DataFrame(data).iloc[state["first_row"]:].to_csv(out / f"{pre}daily_returns.csv", index=False)
 
 

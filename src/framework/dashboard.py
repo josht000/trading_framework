@@ -26,7 +26,8 @@ def metrics_text(frame):
     return "\n".join(lines)
 
 
-def daily_dashboard(path, title, caption, dates, book_series, frame, trades, b_day, first_row, split_row, n_trials_note=""):
+def daily_dashboard(path, title, caption, dates, book_series, frame, trades, b_day, first_row, split_row,
+                    n_trials_note="", benchmarks=None):
     """book_series: fill -> {r_day, f_day, count, random_mean_log: {pool, universe}}; frame: results_frame(); trades: fill -> DataFrame."""
     import matplotlib
 
@@ -52,13 +53,21 @@ def daily_dashboard(path, title, caption, dates, book_series, frame, trades, b_d
     ref = book_series[fills[-1]]
     trend = np.cumsum(ref["f_day"] * np.log1p(b_day))[first_row:]
     ax.plot(x, trend, color="#555555", lw=1.4, ls="--", label=f"trend = exposure-weighted equal-weight liquid universe [{fills[-1]}] (end {trend[-1]:+.2f})")
+    benchmark_colors = ("#f58518", "#54a24b", "#e45756", "#b279a2")
+    for i, (name, returns) in enumerate((benchmarks or {}).items()):
+        values = np.asarray(returns, dtype=float)
+        if values.shape != (len(dates),):
+            continue
+        path_bench = np.cumsum(np.log1p(np.clip(np.nan_to_num(values), -0.999999, None)))[first_row:]
+        ax.plot(x, path_bench, color=benchmark_colors[i % len(benchmark_colors)], lw=1.35, ls="-.",
+                label=f"benchmark {name} (end {path_bench[-1]:+.2f})")
     ax.axvspan(x[0], split_x, color="#e8f0fe", alpha=0.5, lw=0)
     ax.axvspan(split_x, x[-1], color="#fdecea", alpha=0.5, lw=0)
     ax.axvline(split_x, color="#888888", lw=1)
     ymax = ax.get_ylim()[1]
     ax.text(x[0], ymax, " DEV (selection period)", va="top", fontsize=11, color="#1a4f9c")
     ax.text(split_x, ymax, " TEST (locked out-of-sample)", va="top", fontsize=11, color="#a32620")
-    ax.set_title("A. Cumulative log return of the equal-weight book vs trend and random-pick baseline")
+    ax.set_title("A. Cumulative log return: strategy, partition baselines, and external benchmarks")
     ax.set_ylabel("cumulative log return")
     ax.set_xlabel("session date")
     ax.legend(loc="lower left", fontsize=8)

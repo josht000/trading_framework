@@ -79,6 +79,37 @@ def check_study_inputs(strategy, cfg, *, root=None, results_dir=None):
         symbols = [s.strip() for s in str(cfg.get("etf_symbols", "")).split(",") if s.strip()] or None
         inputs["etf_data_dir"] = _bars_input(root, etf_data_dir, suffix, symbols)
 
+    extra_bar_inputs = (
+        ("price_data_dir", "price_data_suffix", None),
+        ("spy_data_dir", "spy_data_suffix", ("SPY",)),
+        ("tr_data_dir", "tr_data_suffix", None),
+        ("raw_data_dir", "raw_data_suffix", None),
+        ("yahoo_data_dir", "yahoo_data_suffix", None),
+    )
+    for key, suffix_key, default_symbols in extra_bar_inputs:
+        folder = cfg.get(key)
+        if not folder:
+            continue
+        requested = cfg.get(f"{key}_symbols")
+        if requested:
+            symbols = [s.strip() for s in str(requested).split(",") if s.strip()]
+        elif default_symbols:
+            symbols = list(default_symbols)
+        elif cfg.get("symbol") and key in ("tr_data_dir", "raw_data_dir"):
+            symbols = [str(cfg["symbol"])]
+        else:
+            symbols = None
+        inputs[key] = _bars_input(root, folder, cfg.get(suffix_key, suffix), symbols)
+
+    for key in ("earnings_file", "corporate_actions_file"):
+        value = cfg.get(key)
+        if not value:
+            continue
+        path = _resolve(root, value)
+        if not path.is_file():
+            raise FileNotFoundError(f"required input file not found: {path}")
+        inputs[key] = _record(path)
+
     ranks_dir = cfg.get("ranks_dir")
     if ranks_dir and include_stocks is not False:
         rank_manifest = _rank_input(root, ranks_dir)

@@ -1,0 +1,26 @@
+mode: replication
+data_dir: data/cache/etf_yahoo_2008_2025
+data_suffix: _1Day_yahoo.parquet
+symbols: SPY,IWM,EFA,TLT,LQD,HYG,EEM,EMB,IYR,GSG,GLD,TIP,BIL
+partition_split_date: "2024-01-01"
+
+lookback: 126
+target_vol: 0.05
+max_target_vol: 0.50
+rebalance: monthly
+cost_bps_per_side: 5.0
+fills: next_open,close
+book_slots: 1
+n_draws: 1000
+n_boot: 5000
+seed: 20261031
+weight_grid_path: data/cache/s044_efficiente5_weight_grid_v1.npy
+cpcv_groups: 6
+cpcv_test_groups: 2
+cpcv_purge_months: 1
+
+variants:
+  catalog: {mode: catalog, data_dir: data/cache/etf_tr, data_suffix: _1Day_tr.parquet}
+  lookback12: {lookback: 252}
+  target10: {target_vol: 0.10}
+  weekly: {rebalance: weekly}
