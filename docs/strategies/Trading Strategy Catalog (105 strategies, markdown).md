@@ -263,7 +263,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
   |---|---|---|---|---|---|---|---|---|---|
   | baseline (next_open) | +0.06 | -0.05 (p=0.85) | 0.21 | -11% | +0.13 | -0.02 (p=0.78) | 1.32 | -4% | 754+418 |
   | rsi5 (next_open) | +0.05 | -0.01 (p=0.60) | 0.20 | -8% | +0.06 | -0.02 | 1.05 | -3% | 392+209 |
-  Reproduce: `python run.py --strategy s001_rsi2_connors [--variant rsi5,exit70,gate21,pyramid3,stop3atr,rsi5_exit70,rsi5_gate21,rsi5_pyramid3,rsi5_stop3atr]`
+  Reproduce: baseline `python run.py --strategy s001_rsi2_connors`; variants `python run.py --strategy s001_rsi2_connors --variant rsi5,exit70,gate21,pyramid3,stop3atr,rsi5_exit70,rsi5_gate21,rsi5_pyramid3,rsi5_stop3atr`
 
 ### S003 | RSI(4) 25/75 (Connors)
 - family: ETF index mean reversion
@@ -289,7 +289,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
   |---|---|---|---|---|---|---|---|---|---|
   | baseline (next_open) | +0.18 | -0.05 (p=0.77) | 0.37 | -9% | +0.11 | -0.12 (p=0.99) | 0.51 | -10% | 84+44 |
   | exit75 (next_open) | +0.47 | -0.12 (p=0.99) | 0.55 | -27% | - | - | - | - | 72 dev |
-  Reproduce: `python run.py --strategy s003_rsi4_2575 [--variant exit75]`
+  Reproduce: baseline `python run.py --strategy s003_rsi4_2575`; variant `python run.py --strategy s003_rsi4_2575 --variant exit75`
 
 ### S004 | Cumulative RSI(2)
 - family: Connors oversold - cumulative RSI
@@ -353,7 +353,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
   |---|---|---|---|---|---|---|---|---|---|
   | baseline (next_open) | +0.14 | -0.08 (p=0.91) | 0.28 | -18% | +0.18 | -0.06 (p=0.95) | 1.07 | -9% | 940+483 |
   | lb10 (next_open) | +0.14 | -0.02 (p=0.69) | 0.23 | -33% | +0.18 | -0.03 | 1.04 | -7% | 649+321 |
-  Reproduce: `python run.py --strategy s006_double_7s [--variant lb5,lb10,spy_only,stop3atr,lb5_spy,lb10_stop]`
+  Reproduce: baseline `python run.py --strategy s006_double_7s`; variants `python run.py --strategy s006_double_7s --variant lb5,lb10,spy_only,stop3atr,lb5_spy,lb10_stop`
 
 ### S007 | 3-Day Pullback
 - family: ETF index mean reversion
@@ -829,7 +829,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
   |---|---|---|---|---|---|---|---|---|---|
   | baseline (next_open) | +0.65 | -0.09 (p=0.63) | 0.62 | -31% | +0.41 | +0.01 (p=0.45) | 0.97 | -21% | 2468+893 |
   | etf_only (next_open) | +0.33 | +0.03 (p=0.33) | 0.71 | -13% | +0.20 | -0.02 | 0.89 | -10% | 79+32 |
-  Reproduce: `python run.py --strategy s033_52w_breakout [--variant fast,etf_only]`
+  Reproduce: baseline `python run.py --strategy s033_52w_breakout`; variants `python run.py --strategy s033_52w_breakout --variant fast,etf_only`
 
 ### S035 | Low-Volatility Anomaly Portfolio
 - family: cross-sectional short-term reversal
@@ -939,7 +939,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
   |---|---|---|---|---|---|---|---|---|---|
   | baseline decile (close) | +0.80 | +0.07 (p=0.45) | 0.53 | -44% | +0.74 | +0.35 (p=0.26) | 0.83 | -39% | 4116+1666 |
   | top10 (close) | +0.92 | +0.18 (p=0.44) | 0.52 | -61% | +1.44 | +1.04 | 1.12 | -48% | 840+340 |
-  Reproduce: `python run.py --strategy s041_mom_12_1 [--variant top10,indneutral,top10_ind]`
+  Reproduce: baseline `python run.py --strategy s041_mom_12_1`; variants `python run.py --strategy s041_mom_12_1 --variant top10,indneutral,top10_ind`
 
 ### S042 | Sector Momentum Rotation
 - family: momentum and breakout
@@ -965,7 +965,7 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
   |---|---|---|---|---|---|---|---|---|---|
   | baseline top3 (close) | +0.85 | +0.10 (p=0.34) | 0.73 | -31% | +0.47 | +0.07 (p=0.29) | 1.25 | -16% | 252+102 |
   | validea (close) | +0.92 | +0.16 (p=0.16) | 0.83 | -33% | +0.37 | -0.03 | 1.14 | -16% | 425+170 |
-  Reproduce: `python run.py --strategy s042_sector_momentum [--variant rankavg,validea,top5,weekly]`
+  Reproduce: baseline `python run.py --strategy s042_sector_momentum`; variants `python run.py --strategy s042_sector_momentum --variant rankavg,validea,top5,weekly`
 
 ### S043 | ETF Multi-Asset Momentum Rotation (absorbs S068, S074)
 - family: momentum and breakout

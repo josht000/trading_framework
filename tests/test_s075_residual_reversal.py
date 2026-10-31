@@ -156,9 +156,17 @@ def write_synthetic_dir(path, n_sym=40, n_rows=700):
     return sector_map
 
 
+def write_fake_simfin(root):
+    path = root / "data" / "simfin"
+    path.mkdir(parents=True)
+    (path / "us-companies.csv").touch()
+    (path / "industries.csv").touch()
+
+
 def test_run_py_data_dir_switch_end_to_end(tmp_path, monkeypatch):
     data_dir = tmp_path / "bars"
     sector_map = write_synthetic_dir(data_dir)
+    write_fake_simfin(tmp_path)
     cfg = small_cfg(data_dir="does/not/exist", partition_split_date="2022-03-01", min_history=100)
     config = tmp_path / "s075.yaml"
     config.write_text(yaml.safe_dump(cfg), encoding="utf-8")
@@ -258,6 +266,7 @@ def test_variant_overlay_and_env_export(tmp_path):
 def test_run_py_variant_batch_writes_prefixed_files_and_one_png(tmp_path, monkeypatch):
     data_dir = tmp_path / "bars"
     sector_map = write_synthetic_dir(data_dir)
+    write_fake_simfin(tmp_path)
     cfg = small_cfg(partition_split_date="2022-03-01", min_history=100, variants={"nosma": {"sma_window": 0}})
     config = tmp_path / "s075.yaml"
     config.write_text(yaml.safe_dump(cfg), encoding="utf-8")

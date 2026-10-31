@@ -2,12 +2,12 @@
 
 from src.utils import timing
 
-ORDER = ("trades", "table", "rank", "charts", "partition")
+ORDER = ("trades", "table", "rank", "partition", "charts")
 DEPENDENCIES = {
     "trades": (),
-    "table": (),
+    "table": ("trades",),
     "rank": ("table",),
-    "charts": ("table", "rank"),
+    "charts": ("table", "rank", "partition"),
     "partition": ("table", "rank"),
 }
 

@@ -4,11 +4,10 @@ import numpy as np
 import pandas as pd
 
 from src.data.daily_panel import load_panel
+from src.framework import DailyStudy, daily_study as BS
 from src.framework.registry import register
-from src.strategies import _bookstudy as BS
-from src.strategies._bookstudy import DailyStudy
 from src.strategies._engines import align_ranks
-from tools.build_liquid_ranks import load_liquid_ranks
+from src.data.liquid_universe import load_liquid_ranks
 
 from .signals import build_trades, compute_signals
 

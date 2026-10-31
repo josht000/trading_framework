@@ -81,9 +81,9 @@ class HistoricalPriceVolumeScreenerTests(unittest.TestCase):
             100_000_000,
         ]
         changed_result = screener.scan(daily, changed, context=NEWS_CONTEXT)
-        self.assertEqual(
-            result.loc[entry_index].to_dict(),
-            changed_result.loc[entry_index].to_dict(),
+        pd.testing.assert_series_equal(
+            result.loc[entry_index],
+            changed_result.loc[entry_index],
         )
 
     def test_rejects_insufficient_relative_volume(self):

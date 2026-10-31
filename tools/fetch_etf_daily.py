@@ -19,25 +19,25 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tools.fetch_daily_10years import (  # noqa: E402
-    OUT_DIR,
+from src.data.alpaca_history import (
     START,
-    STATE_DIR,
-    fetch_batch,
-    read_cache,
-    cache_path,
+    cache_path as _cache_path,
+    fetch_bars_batch,
+    read_daily_cache,
 )
+from src.data.market_universes import ETF_SYMBOLS
 
-ETF_SYMBOLS = [
-    # index / broad
-    "SPY", "QQQ", "IWM", "DIA", "RSP", "IVV", "VOO", "TQQQ", "SQQQ",
-    # 11 SPDR sectors
-    "XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY",
-    # rates / credit / cash legs
-    "TLT", "IEF", "SHY", "BIL", "AGG", "LQD", "HYG",
-    # equity pairs, rotation, overseas
-    "GDX", "GDXJ", "EFA", "ACWX", "EEM", "EWJ", "XHB",
-]
+OUT_DIR = ROOT / "data" / "cache" / "daily_10years"
+STATE_DIR = OUT_DIR / "_state"
+SUFFIX = "_1Day_split.parquet"
+
+
+def cache_path(symbol):
+    return _cache_path(OUT_DIR, symbol, SUFFIX)
+
+
+def read_cache(path):
+    return read_daily_cache(path)
 
 def cache_end():
     """End boundary (exclusive) matching the latest bar already in the cache.
@@ -99,7 +99,10 @@ def main():
             print(f"  skip {batch} (done marker)", flush=True)
             continue
         try:
-            fetch_batch(session, batch, next_request, START, end)
+            fetch_bars_batch(
+                session, batch, next_request, START, end,
+                adjustment="split", out_dir=OUT_DIR, suffix=SUFFIX,
+            )
             marker.write_text("\n".join(batch) + "\n", encoding="utf-8")
             print(f"  fetched {batch}", flush=True)
         except Exception as exc:

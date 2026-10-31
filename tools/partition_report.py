@@ -18,8 +18,8 @@ sys.path.insert(0, str(ROOT))
 
 import pandas as pd
 
-import rank_final as RF
-from rank_test import apply_keys, build_table
+from tools import rank_final as RF
+from tools.rank_test import apply_keys, build_table
 from src.backtest import partition as P
 from src.backtest import kfold as K
 from src.utils import timing

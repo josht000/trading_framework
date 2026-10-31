@@ -4,12 +4,11 @@ import numpy as np
 import pandas as pd
 
 from src.data.daily_panel import load_panel
-from src.framework import report
+from src.framework import DailyStudy, daily_study as BS, report
 from src.framework.registry import register
-from src.strategies import _bookstudy as BS
-from src.strategies._bookstudy import DailyStudy
 from src.strategies._engines import align_ranks, merge_panels
-from tools.build_liquid_ranks import load_liquid_ranks
+from src.data.liquid_universe import load_liquid_ranks
+from src.utils import timing
 
 from .signals import build_trades, compute_signals
 
@@ -27,12 +26,18 @@ class S033Breakout(DailyStudy):
         rebuild = bool(ctx.flags.get("rebuild_cache"))
         suffix = cfg.get("data_suffix", TR_SUFFIX)
         etfs = [x.strip() for x in str(cfg["etf_symbols"]).split(",") if x.strip()]
-        with __import__("src.utils.timing", fromlist=["timing"]).stage("panels"):
+        with timing.stage("panels"):
             etf_panel = load_panel(cfg["etf_data_dir"], symbols=etfs, rebuild=rebuild, suffix=suffix)
-            stock_panel = load_panel(cfg["data_dir"], rebuild=rebuild, suffix=suffix)
-            panel = merge_panels(etf_panel, stock_panel) if cfg.get("include_stocks", True) else etf_panel
-        rank_dates, rank_symbols, rank = load_liquid_ranks(cfg.get("ranks_dir", "data/cache/liquid_ranks"))
-        rank = align_ranks(panel["dates"], panel["symbols"], rank_dates, rank_symbols, rank)
+            if cfg.get("include_stocks", True):
+                stock_panel = load_panel(cfg["data_dir"], rebuild=rebuild, suffix=suffix)
+                panel = merge_panels(etf_panel, stock_panel)
+            else:
+                panel = etf_panel
+        if cfg.get("include_stocks", True):
+            rank_dates, rank_symbols, rank = load_liquid_ranks(cfg.get("ranks_dir", "data/cache/liquid_ranks"))
+            rank = align_ranks(panel["dates"], panel["symbols"], rank_dates, rank_symbols, rank)
+        else:
+            rank = np.full(panel["close"].shape, np.inf)
         etf_cols = np.array([panel["symbols"].index(s) for s in etf_panel["symbols"]])
         return panel, {"rank": rank, "etf_cols": etf_cols}
 

@@ -55,7 +55,7 @@ def check(manifest_path):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--manifest", default="reports/golden/atr_pivot_lb13/MANIFEST.json")
+    parser.add_argument("--manifest", default="results/s075_residual_reversal/golden/MANIFEST.json")
     args = parser.parse_args()
     raise SystemExit(0 if check(args.manifest) else 1)
 

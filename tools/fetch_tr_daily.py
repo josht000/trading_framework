@@ -22,14 +22,9 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from tools.fetch_daily_10years import (  # noqa: E402
-    BAR_COLUMNS,
-    START,
-    alpaca_page,
-)
+from src.data.alpaca_history import START, fetch_bars_batch
 
 OUT_DIR = ROOT / "data" / "cache" / "daily_10years_tr"
-PAGE_LIMIT = 10_000
 _out_dir = OUT_DIR
 
 
@@ -38,41 +33,11 @@ def out_path(symbol):
 
 
 def fetch_symbol(session, symbol, next_request, start, end):
-    params = {
-        "symbols": symbol,
-        "timeframe": "1Day",
-        "start": start.strftime("%Y-%m-%dT00:00:00Z"),
-        "end": end.strftime("%Y-%m-%dT00:00:00Z"),
-        "limit": PAGE_LIMIT,
-        "adjustment": "all",
-        "feed": "sip",
-        "sort": "asc",
-    }
-    rows = []
-    while True:
-        payload = alpaca_page(session, [symbol], params, next_request)
-        rows.extend((payload.get("bars") or {}).get(symbol, []))
-        token = payload.get("next_page_token")
-        if not token:
-            break
-        params["page_token"] = token
-    if not rows:
-        return 0
-    bars = pd.DataFrame(rows).rename(columns={
-        "t": "timestamp", "o": "open", "h": "high", "l": "low",
-        "c": "close", "v": "volume", "n": "trade_count", "vw": "vwap",
-    })
-    bars["timestamp"] = pd.to_datetime(bars["timestamp"], utc=True)
-    bars.insert(0, "symbol", symbol)
-    frame = bars[BAR_COLUMNS].set_index("timestamp").sort_index()
-    frame = frame[~frame.index.duplicated(keep="last")]
-    path = out_path(symbol)
-    if path.exists():
-        old = pd.read_parquet(path)
-        frame = pd.concat([old, frame]).sort_index()
-        frame = frame[~frame.index.duplicated(keep="last")]
-    frame.to_parquet(path)
-    return len(frame)
+    counts = fetch_bars_batch(
+        session, [symbol], next_request, start, end,
+        adjustment="all", out_dir=_out_dir, suffix="_1Day_tr.parquet",
+    )
+    return counts[symbol]
 
 
 def main():

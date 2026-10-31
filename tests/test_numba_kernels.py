@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from pandas.testing import assert_frame_equal
 
-import rank_test
+from tools import rank_test
 from src.backtest import pit_metrics
 from src.backtest.pit_runner import (
     _atr_pct,

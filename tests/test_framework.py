@@ -56,7 +56,39 @@ def test_pipeline_stage_order_and_subset():
     dummy = Dummy()
     ctx = RunContext(cfg={}, paths={}, args=None, flags={})
     run(ctx, dummy, ["rank"])
-    assert dummy.calls == ["table", "setups", "rank"]
+    assert dummy.calls == ["trades", "table", "setups", "rank"]
+
+
+def test_charts_stage_depends_on_partition_results():
+    class Dummy(Strategy):
+        name = "dummy"
+
+        def __init__(self):
+            self.calls = []
+
+        def build_trades(self, ctx):
+            return pd.DataFrame()
+
+        def build_table(self, ctx, rebuild):
+            return pd.DataFrame()
+
+        def setups(self, ctx, table):
+            return {}
+
+        def rank_experiments(self, ctx, table):
+            self.calls.append("rank")
+
+        def evaluate(self, ctx, table, setups):
+            self.calls.append("partition")
+            return {"ok": True}
+
+        def charts(self, ctx, table, setups):
+            assert ctx.data["evaluation"] == {"ok": True}
+            self.calls.append("charts")
+
+    strategy = Dummy()
+    run(RunContext(cfg={}, paths={}, args=None, flags={}), strategy, ["charts"])
+    assert strategy.calls == ["rank", "partition", "charts"]
 
 
 def test_report_table_smoke(capsys):

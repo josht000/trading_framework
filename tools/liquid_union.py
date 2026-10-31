@@ -1,7 +1,4 @@
-"""Write the union of symbols that ever rank in the trailing-60d-dollar-volume top N.
-
-Used to bound the total-return refetch to the names the liquid_top_N universe can
-actually pick (S041/S033), plus a buffer.
+"""Write stock symbols that ever enter the PIT trailing-dollar-volume top N.
 
   python tools/liquid_union.py --n 600 --out data/cache/daily_10years_tr/_universe.txt
 """
@@ -10,29 +7,24 @@ import argparse
 import sys
 from pathlib import Path
 
-import numpy as np
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.data.daily_panel import liquidity_ranks, load_panel  # noqa: E402
-from tools.fetch_etf_daily import ETF_SYMBOLS  # noqa: E402
-
-EXCLUDE = set(ETF_SYMBOLS) | {"GLD", "SLV", "USO", "CPER", "GSG", "EMB", "IYR", "TIP", "UUP", "DBC", "VNQ"}
+from src.data.liquid_universe import compute_liquid_ranks, ever_top_symbols  # noqa: E402
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n", type=int, default=600)
     parser.add_argument("--out", required=True)
+    parser.add_argument("--data-dir", default=str(ROOT / "data" / "cache" / "daily_10years"))
     args = parser.parse_args()
-    panel = load_panel(ROOT / "data" / "cache" / "daily_10years")
-    rank = liquidity_ranks(panel["close"], panel["volume"])
-    hit = (rank <= args.n).any(axis=0)
-    symbols = sorted(s for s, h in zip(panel["symbols"], hit) if h and s not in EXCLUDE)
-    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-    Path(args.out).write_text("\n".join(symbols) + "\n", encoding="utf-8")
-    print(f"{int(hit.sum())} names ever in top {args.n}; {len(symbols)} after ETF exclusion -> {args.out}")
+    dates, symbols, ranks = compute_liquid_ranks(args.data_dir)
+    names = ever_top_symbols(symbols, ranks, args.n)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(names) + "\n", encoding="utf-8")
+    print(f"{len(names)} common stocks ever in top {args.n} across {len(dates)} sessions -> {out}")
 
 
 if __name__ == "__main__":

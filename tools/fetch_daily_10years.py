@@ -18,40 +18,31 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from src.data.alpaca_history import (
+    BAR_COLUMNS,
+    START,
+    cache_path as _cache_path,
+    fetch_bars_batch,
+    merge_bar_file,
+    read_daily_cache,
+)
 from src.data.pit_dataset import NY, universe_symbols
 
-START = pd.Timestamp("2016-01-04")
 BACKFILL_END = pd.Timestamp("2023-09-01")  # exclusive
 OUT_DIR = ROOT / "data" / "cache" / "daily_10years"
 STATE_DIR = OUT_DIR / "_state"
-API_URL = "https://data.alpaca.markets/v2/stocks/bars"
-PAGE_LIMIT = 10_000
-REQUEST_INTERVAL = 0.31  # Alpaca free plan: 200 requests/minute
-BAR_COLUMNS = ["timestamp", "symbol", "open", "high", "low", "close",
-               "volume", "trade_count", "vwap"]
 
 
 def cache_path(symbol):
-    return OUT_DIR / f"{symbol.replace('/', '_')}_1Day_split.parquet"
+    return _cache_path(OUT_DIR, symbol, "_1Day_split.parquet")
 
 
 def read_cache(path):
-    if not path.exists():
-        return pd.DataFrame(columns=["symbol", "open", "high", "low", "close",
-                                     "volume", "trade_count", "vwap"],
-                            index=pd.DatetimeIndex([], tz="UTC", name="timestamp"))
-    return pd.read_parquet(path)
+    return read_daily_cache(path)
 
 
 def merge_write(symbol, bars):
-    path = cache_path(symbol)
-    old = read_cache(path)
-    new = bars.set_index("timestamp")
-    new.index = pd.to_datetime(new.index, utc=True)
-    new.index.name = "timestamp"
-    merged = pd.concat([old, new]).sort_index()
-    merged = merged[~merged.index.duplicated(keep="last")]
-    merged.to_parquet(path)
+    merge_bar_file(cache_path(symbol), bars[BAR_COLUMNS])
 
 
 def seed_existing():
@@ -85,56 +76,11 @@ def seed_existing():
             print(f"  reused legacy cache files: {i}", flush=True)
 
 
-def alpaca_page(session, symbols, params, next_request):
-    """Fetch one API page, respecting the free-tier request ceiling."""
-    for attempt in range(6):
-        wait = next_request[0] - time.monotonic()
-        if wait > 0:
-            time.sleep(wait)
-        next_request[0] = time.monotonic() + REQUEST_INTERVAL
-        response = session.get(API_URL, params=params, timeout=90)
-        if response.status_code == 429 or response.status_code >= 500:
-            if attempt == 5:
-                response.raise_for_status()
-            retry_after = response.headers.get("Retry-After")
-            time.sleep(float(retry_after) if retry_after else min(2 ** attempt, 30))
-            continue
-        response.raise_for_status()
-        return response.json()
-    raise RuntimeError(f"Alpaca request failed for {symbols}")
-
-
 def fetch_batch(session, symbols, next_request, start=START, end=BACKFILL_END):
-    params = {
-        "symbols": ",".join(symbols),
-        "timeframe": "1Day",
-        "start": start.strftime("%Y-%m-%dT00:00:00Z"),
-        "end": end.strftime("%Y-%m-%dT00:00:00Z"),
-        "limit": PAGE_LIMIT,
-        "adjustment": "split",
-        "feed": "sip",
-        "sort": "asc",
-    }
-    output = {symbol: [] for symbol in symbols}
-    while True:
-        payload = alpaca_page(session, symbols, params, next_request)
-        for symbol, rows in (payload.get("bars") or {}).items():
-            output.setdefault(symbol, []).extend(rows)
-        token = payload.get("next_page_token")
-        if not token:
-            break
-        params["page_token"] = token
-
-    for symbol, rows in output.items():
-        if not rows:
-            continue
-        bars = pd.DataFrame(rows).rename(columns={
-            "t": "timestamp", "o": "open", "h": "high", "l": "low",
-            "c": "close", "v": "volume", "n": "trade_count", "vw": "vwap",
-        })
-        bars["timestamp"] = pd.to_datetime(bars["timestamp"], utc=True)
-        bars.insert(0, "symbol", symbol)
-        merge_write(symbol, bars[BAR_COLUMNS])
+    fetch_bars_batch(
+        session, symbols, next_request, start, end,
+        adjustment="split", out_dir=OUT_DIR, suffix="_1Day_split.parquet",
+    )
 
 
 def main():
