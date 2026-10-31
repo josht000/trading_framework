@@ -73,7 +73,7 @@ C:\data\envs\trading_framework\Scripts\python.exe run.py --strategy <name> [--da
    (format exactly like S075).
 2. In the strategy's entry add an `implementation_results:` bullet: where the code
    lives, baseline-vs-winner results table (dev/test total, skill, Sharpe,
-   max DD, trades), and ALWAYS a `Reproduce:` line with the exact command(s).
+   max DD, trades dev, trades test), and ALWAYS a `Reproduce:` line with the exact command(s).
    Keep it as terse as the S075 entry.
 3. Golden outputs: rebuild into `results/<name>/golden/` per the study's golden
    tooling convention.

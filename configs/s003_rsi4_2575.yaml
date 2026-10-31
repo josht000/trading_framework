@@ -1,0 +1,25 @@
+data_dir: data/cache/etf_tr
+data_suffix: _1Day_tr.parquet
+symbols: QQQ,SPY
+min_history: 250
+rsi_len: 4
+rsi_threshold: 25
+gate: sma200
+sma_window: 200
+exit_mode: rsi          # rsi exit at exit_rsi (55 modified, 75 Connors original)
+exit_sma: 5             # unused for this strategy
+exit_rsi: 55
+sizing: single
+disaster_stop_atr: 0.0
+atr_len: 14
+cost_bps_per_side: 5.0
+fills: next_open,close
+partition_split_date: "2024-01-01"
+n_draws: 1000
+n_boot: 5000
+n_timing_draws: 500
+seed: 20261101
+book_slots: 2
+
+variants:
+  exit75: {exit_rsi: 75}

@@ -1,0 +1,24 @@
+data_dir: data/cache/daily_10years_tr
+data_suffix: _1Day_tr.parquet
+ranks_dir: data/cache/liquid_ranks
+universe_top_n: 500
+mom_window: 252         # 12 months
+skip_window: 21         # skip the most recent month (reversal window)
+breadth_mode: decile    # decile | top
+decile: 0.10            # top decile of the eligible universe (research scale)
+breadth: 50             # used when breadth_mode = top
+min_breadth: 1
+industry_neutral: false
+delisting_return: -0.30 # catalog: -30% performance-delisting return when unknown
+cost_bps_per_side: 15.0 # catalog stock default 10-15 bps
+fills: close,next_open  # rule names the month-end close; next_open is the robustness fill
+partition_split_date: "2024-01-01"
+n_draws: 1000
+n_boot: 5000
+seed: 20261101
+book_slots: 50          # ~decile width; fully-invested equal weight
+
+variants:
+  top10: {breadth_mode: top, breadth: 10, book_slots: 10}   # paper-scale breadth
+  indneutral: {industry_neutral: true}
+  top10_ind: {breadth_mode: top, breadth: 10, book_slots: 10, industry_neutral: true}

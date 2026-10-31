@@ -33,11 +33,11 @@ def _read_symbol(path):
     return frame[~frame.index.duplicated(keep="last")].sort_index()
 
 
-def _build(root, symbols):
+def _build(root, symbols, suffix=SUFFIX):
     frames = {}
     with timing.stage("panel read files"):
         for symbol in symbols:
-            frames[symbol] = _read_symbol(root / f"{symbol}{SUFFIX}")
+            frames[symbol] = _read_symbol(root / f"{symbol}{suffix}")
     with timing.stage("panel assemble"):
         dates = np.unique(np.concatenate([f.index.values for f in frames.values()]))
         arrays = {k: np.full((len(dates), len(symbols)), np.nan) for k in FIELDS}
@@ -48,23 +48,23 @@ def _build(root, symbols):
     return dates, arrays
 
 
-def load_panel(data_dir, symbols=None, rebuild=False):
+def load_panel(data_dir, symbols=None, rebuild=False, suffix=SUFFIX):
     """Load open/close/volume matrices for `symbols` (default: every file) from `data_dir`, with a fingerprinted cache."""
     root = Path(data_dir)
     if not root.is_dir():
         raise FileNotFoundError(f"data dir not found: {root}")
-    available = sorted(p.name[: -len(SUFFIX)] for p in root.glob(f"*{SUFFIX}"))
+    available = sorted(p.name[: -len(suffix)] for p in root.glob(f"*{suffix}"))
     wanted = available if symbols is None else sorted(set(available) & set(symbols))
     if not wanted:
-        raise ValueError(f"no *{SUFFIX} files in {root} match the requested symbols")
-    key = _key(PANEL_VERSION, _source_fingerprint(root), wanted)
+        raise ValueError(f"no *{suffix} files in {root} match the requested symbols")
+    key = _key(PANEL_VERSION, _source_fingerprint(root), wanted + [suffix])
     cache_dir = PANEL_CACHE / key
     if _cache_enabled() and not _rebuild_requested(rebuild) and (cache_dir / "manifest.json").exists():
         with timing.stage("panel cache read"):
             dates = np.load(cache_dir / "dates.npy")
             arrays = {k: np.load(cache_dir / f"{k}.npy") for k in FIELDS}
         return {"dates": pd.DatetimeIndex(dates), "symbols": wanted, **arrays}
-    dates, arrays = _build(root, wanted)
+    dates, arrays = _build(root, wanted, suffix)
     if _cache_enabled():
         with timing.stage("panel cache write"):
             cache_dir.mkdir(parents=True, exist_ok=True)

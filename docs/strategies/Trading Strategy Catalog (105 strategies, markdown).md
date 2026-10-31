@@ -18,11 +18,11 @@
 - [Shared backtest and execution specification (applies to every strategy)](#shared-backtest-and-execution-specification-applies-to-every-strategy)
 - [Review R1 resolution log](#review-r1-resolution-log)
 - [Family 1 — ETF Index Mean Reversion (Connors lineage)](#family-1--etf-index-mean-reversion-connors-lineage)
-    - [S001 | RSI(2) Classic (Connors) - cluster control (absorbs S002, S092)](#s001--rsi2-classic-connors---cluster-control-absorbs-s002-s092)
-    - [S003 | RSI(4) 25/75 (Connors)](#s003--rsi4-2575-connors)
+    - [S001 | RSI(2) Classic (Connors) - cluster control (absorbs S002, S092)](#s001--rsi2-classic-connors---cluster-control-absorbs-s002-s092) — IMPLEMENTED
+    - [S003 | RSI(4) 25/75 (Connors)](#s003--rsi4-2575-connors) — IMPLEMENTED
     - [S004 | Cumulative RSI(2)](#s004--cumulative-rsi2)
     - [S005 | Connors %b (Bollinger Band)](#s005--connors-b-bollinger-band)
-    - [S006 | Double 7s](#s006--double-7s)
+    - [S006 | Double 7s](#s006--double-7s) — IMPLEMENTED
     - [S007 | 3-Day Pullback](#s007--3-day-pullback)
     - [S008 | ConnorsRSI(3,2,100) Stock Pullback](#s008--connorsrsi32100-stock-pullback)
     - [S009 | 3 Days Down Overnight (SPY)](#s009--3-days-down-overnight-spy)
@@ -48,14 +48,14 @@
     - [S030 | Down-Streak Reversal (5+ Days)](#s030--down-streak-reversal-5-days)
     - [S031 | Up-Streak Fade (5+ Days)](#s031--up-streak-fade-5-days)
     - [S032 | 52-Week-High Proximity Portfolio (George-Hwang)](#s032--52-week-high-proximity-portfolio-george-hwang)
-    - [S033 | 52-Week-High Breakout (Donchian-style)](#s033--52-week-high-breakout-donchian-style)
+    - [S033 | 52-Week-High Breakout (Donchian-style)](#s033--52-week-high-breakout-donchian-style) — IMPLEMENTED
     - [S035 | Low-Volatility Anomaly Portfolio](#s035--low-volatility-anomaly-portfolio)
 - [Family 4 — Momentum, Breakout, and Rotation](#family-4--momentum-breakout-and-rotation)
     - [S036 | Donchian Breakout, Turtle Systems 1 and 2 (absorbs S037)](#s036--donchian-breakout-turtle-systems-1-and-2-absorbs-s037)
     - [S038 | NR7 / Inside-Day Breakout (absorbs S039)](#s038--nr7--inside-day-breakout-absorbs-s039)
     - [S040 | Volume-Confirmed 20-Day-High Breakout](#s040--volume-confirmed-20-day-high-breakout)
-    - [S041 | 12-1 Cross-Sectional Momentum](#s041--12-1-cross-sectional-momentum)
-    - [S042 | Sector Momentum Rotation](#s042--sector-momentum-rotation)
+    - [S041 | 12-1 Cross-Sectional Momentum](#s041--12-1-cross-sectional-momentum) — IMPLEMENTED
+    - [S042 | Sector Momentum Rotation](#s042--sector-momentum-rotation) — IMPLEMENTED
     - [S043 | ETF Multi-Asset Momentum Rotation (absorbs S068, S074)](#s043--etf-multi-asset-momentum-rotation-absorbs-s068-s074)
     - [S044 | Efficiente 5 MPT Replication](#s044--efficiente-5-mpt-replication)
     - [S045 | Multi-Factor Characteristic Blend (US Adaptation; S045a paper design, S045b catalog design)](#s045--multi-factor-characteristic-blend-us-adaptation-s045a-paper-design-s045b-catalog-design)
@@ -257,6 +257,13 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - merged_from: S002, S092
 - data_needs: ETF total-return daily series (DP-ETF)
 - review: KEEP (cluster control) | source OK
+- implementation_results: `src/strategies/s001_rsi2_connors`; Alpaca `adjustment=all` ETF TR bars (`data/cache/etf_tr`, tools/fetch_tr_daily.py), pooled 15-ETF book, 5 bps/side, next_open primary + close upper bound (no ETF minute bars for moc_proxy); dev < 2024-01-01 <= test. `rsi5` = `rsi_threshold: 5` (dev-selected of 9 registered variants; every dev skill is still <= 0 after the selection haircut - the positive close-fill column is the closing-auction upper bound, not tradable edge).
+
+  | variant | dev total (log) | dev skill | dev Sharpe | dev max DD | test total (log) | test skill | test Sharpe | test max DD | trades (dev+test) |
+  |---|---|---|---|---|---|---|---|---|---|
+  | baseline (next_open) | +0.06 | -0.05 (p=0.85) | 0.21 | -11% | +0.13 | -0.02 (p=0.78) | 1.32 | -4% | 754+418 |
+  | rsi5 (next_open) | +0.05 | -0.01 (p=0.60) | 0.20 | -8% | +0.06 | -0.02 | 1.05 | -3% | 392+209 |
+  Reproduce: `python run.py --strategy s001_rsi2_connors [--variant rsi5,exit70,gate21,pyramid3,stop3atr,rsi5_exit70,rsi5_gate21,rsi5_pyramid3,rsi5_stop3atr]`
 
 ### S003 | RSI(4) 25/75 (Connors)
 - family: ETF index mean reversion
@@ -276,6 +283,13 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: exit {RSI(4) > 55 primary, RSI(4) > 75}; fill {moc_proxy, next_open}
 - data_needs: ETF total-return daily series (DP-ETF)
 - review: KEEP (cluster member) | source OK
+- implementation_results: `src/strategies/s003_rsi4_2575` (same swing engine as s001); QQQ+SPY TR book, 5 bps/side, next_open primary; dev < 2024-01-01 <= test. `insufficient evidence`: 84 dev / 44 test trades (<100 dev) - the 2-ETF universe cannot reach the trade-count gate; the pooled ETF family numbers live under S001.
+
+  | variant | dev total (log) | dev skill | dev Sharpe | dev max DD | test total (log) | test skill | test Sharpe | test max DD | trades (dev+test) |
+  |---|---|---|---|---|---|---|---|---|---|
+  | baseline (next_open) | +0.18 | -0.05 (p=0.77) | 0.37 | -9% | +0.11 | -0.12 (p=0.99) | 0.51 | -10% | 84+44 |
+  | exit75 (next_open) | +0.47 | -0.12 (p=0.99) | 0.55 | -27% | - | - | - | - | 72 dev |
+  Reproduce: `python run.py --strategy s003_rsi4_2575 [--variant exit75]`
 
 ### S004 | Cumulative RSI(2)
 - family: Connors oversold - cumulative RSI
@@ -333,6 +347,13 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: lookback {7 primary, 5, 10} (report the whole surface); disaster stop {off primary, close < entry x (1 - 3 x ATR%)}; fill {moc_proxy, next_open}
 - data_needs: ETF total-return daily series (DP-ETF)
 - review: KEEP (cluster champion candidate) | source OK (rule); QS page unfetchable
+- implementation_results: `src/strategies/s006_double_7s`; pooled 15-ETF TR book (SPY-only = `spy_only` variant, ~50 trades/decade as the notes predict), 5 bps/side, next_open primary; dev < 2024-01-01 <= test. `lb10` = `lookback: 10` (dev-selected of 6 variants; still skill <= 0 net of costs - the regime-dependent edge does not survive 5 bps + next-open fills in 2016-26).
+
+  | variant | dev total (log) | dev skill | dev Sharpe | dev max DD | test total (log) | test skill | test Sharpe | test max DD | trades (dev+test) |
+  |---|---|---|---|---|---|---|---|---|---|
+  | baseline (next_open) | +0.14 | -0.08 (p=0.91) | 0.28 | -18% | +0.18 | -0.06 (p=0.95) | 1.07 | -9% | 940+483 |
+  | lb10 (next_open) | +0.14 | -0.02 (p=0.69) | 0.23 | -33% | +0.18 | -0.03 | 1.04 | -7% | 649+321 |
+  Reproduce: `python run.py --strategy s006_double_7s [--variant lb5,lb10,spy_only,stop3atr,lb5_spy,lb10_stop]`
 
 ### S007 | 3-Day Pullback
 - family: ETF index mean reversion
@@ -802,6 +823,13 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: speed {252-day high / 126-day low primary; 63-day high / 21-day low}
 - data_needs: ETF total-return daily series (DP-ETF); daily_10years (D1)
 - review: KEEP (overlay/anchor) | source OK
+- implementation_results: `src/strategies/s033_52w_breakout`; 20 ETF + liquid-top-500 stock pooled book (TR bars), 10 bps/side blended, next_open primary; dev < 2024-01-01 <= test. `etf_only` = stocks excluded (dev-selected of 2 variants; only positive dev skill but 79 dev trades = `insufficient evidence`, and test sign flips = DECAYED; its test PF 4.7 on 32 trades is small-n noise).
+
+  | variant | dev total (log) | dev skill | dev Sharpe | dev max DD | test total (log) | test skill | test Sharpe | test max DD | trades (dev+test) |
+  |---|---|---|---|---|---|---|---|---|---|
+  | baseline (next_open) | +0.65 | -0.09 (p=0.63) | 0.62 | -31% | +0.41 | +0.01 (p=0.45) | 0.97 | -21% | 2468+893 |
+  | etf_only (next_open) | +0.33 | +0.03 (p=0.33) | 0.71 | -13% | +0.20 | -0.02 | 0.89 | -10% | 79+32 |
+  Reproduce: `python run.py --strategy s033_52w_breakout [--variant fast,etf_only]`
 
 ### S035 | Low-Volatility Anomaly Portfolio
 - family: cross-sectional short-term reversal
@@ -905,6 +933,13 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: breadth {top decile research; top-10 paper}; industry-neutral {off primary, on}; overlay {none primary; S104 gate; vol-scaling}
 - data_needs: daily_10years (D1) total-return-adjusted incl. delistings
 - review: KEEP | source OK
+- implementation_results: `src/strategies/s041_mom_12_1`; liquid-top-500 PIT universe (60d median dollar-volume rank over common stocks; `data/cache/liquid_ranks`), Alpaca TR bars incl. delistings (1400 ever-top-600 names), -30% delisting-return convention, 15 bps/side, month-end close primary + next_open; dev < 2024-01-01 <= test. `top10` = top-10 breadth (dev-selected of 3 variants; industry-neutral hurts, consistent with Moskowitz-Grinblatt).
+
+  | variant | dev total (log) | dev skill | dev Sharpe | dev max DD | test total (log) | test skill | test Sharpe | test max DD | trades (dev+test) |
+  |---|---|---|---|---|---|---|---|---|---|
+  | baseline decile (close) | +0.80 | +0.07 (p=0.45) | 0.53 | -44% | +0.74 | +0.35 (p=0.26) | 0.83 | -39% | 4116+1666 |
+  | top10 (close) | +0.92 | +0.18 (p=0.44) | 0.52 | -61% | +1.44 | +1.04 | 1.12 | -48% | 840+340 |
+  Reproduce: `python run.py --strategy s041_mom_12_1 [--variant top10,indneutral,top10_ind]`
 
 ### S042 | Sector Momentum Rotation
 - family: momentum and breakout
@@ -924,6 +959,13 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: signal {12-month primary; combined 1/3/6/9/12 average rank}; breadth {top 3 primary}
 - data_needs: sector ETF total-return daily series (DP-ETF) + PIT sector universe table
 - review: KEEP | source OK
+- implementation_results: `src/strategies/s042_sector_momentum`; 11 SPDR sectors on TR bars, PIT via listing date + 252-bar history (XLC joins 2019), top 3 monthly, 5 bps/side, month-end close primary + next_open; dev < 2024-01-01 <= test. `validea` = ex-S048 1M+3M blend top 5 (dev-selected of 4 variants; its dev edge flips sign on test = DECAYED - the baseline stays the reported config).
+
+  | variant | dev total (log) | dev skill | dev Sharpe | dev max DD | test total (log) | test skill | test Sharpe | test max DD | trades (dev+test) |
+  |---|---|---|---|---|---|---|---|---|---|
+  | baseline top3 (close) | +0.85 | +0.10 (p=0.34) | 0.73 | -31% | +0.47 | +0.07 (p=0.29) | 1.25 | -16% | 252+102 |
+  | validea (close) | +0.92 | +0.16 (p=0.16) | 0.83 | -33% | +0.37 | -0.03 | 1.14 | -16% | 425+170 |
+  Reproduce: `python run.py --strategy s042_sector_momentum [--variant rankavg,validea,top5,weekly]`
 
 ### S043 | ETF Multi-Asset Momentum Rotation (absorbs S068, S074)
 - family: momentum and breakout
@@ -1524,16 +1566,14 @@ These are build tasks outside the catalog; strategies whose prerequisites are mi
 - parameter_variants: exit {5-session time stop primary; residual > 0 with max 10 sessions}; SMA200 filter {on primary, off}; skip {0 days, 1 day}; peers {SimFin industry equal-weight primary; sector ETF}
 - data_needs: daily_10years (D1) + SimFin industry map + earnings flag (DP-EARN)
 - review: KEEP | source PARTIAL (cited paper was wrong; NY Fed SR 513 now cited)
-- implementation_results: `src/strategies/s075_residual_reversal`; SimFin industry equal-weight leave-one-out peers (no sector ETFs in the cache), liquid top 500 universe, long-only, research scale, 15 bps/side; dev < 2024-01-01 <= test. `big10` = `min_abs_resid: 0.10` (only residual <= -10% entries; dev-selected winner of 15 variants; dev selection haircut ~0.33 log; test skill not significant).
+- implementation_results: `src/strategies/s075_residual_reversal`; SimFin sector-level (12 groups, matching the paper's 11 SIGC industries) equal-weight leave-one-out peers (no sector ETFs in the cache; `peer_level: industry` reproduces the original 74-industry version), liquid top 500 universe, long-only, research scale, 15 bps/side; dev < 2024-01-01 <= test. `big10` = `min_abs_resid: 0.10` (only residual <= -10% entries; dev-selected winner of 15 variants; dev selection haircut ~0.34 log; test skill not significant).
 
   | variant | dev total (log) | dev skill | dev Sharpe | dev max DD | test total (log) | test skill | test Sharpe | test max DD | trades (dev+test) | avg positions |
   |---|---|---|---|---|---|---|---|---|---|---|
-  | baseline | -0.25 | -0.69 | -0.15 | -44% | +0.25 | +0.00 (p=0.50) | 0.51 | -24% | 18,438 | 49 |
-  | big10 | +0.07 | -0.05 | +0.17 | -15% | +0.11 | +0.07 (p=0.35) | 0.35 | -15% | 2,857 | 7-13 |
+  | baseline | -0.21 | -0.62 | -0.11 | -48% | +0.09 | -0.17 (p=0.74) | 0.25 | -25% | 18,299 | 49-53 |
+  | big10 | +0.04 | -0.09 | +0.11 | -23% | +0.13 | +0.07 (p=0.38) | 0.35 | -19% | 3,163 | 7-15 |
 
   Reproduce: `python run.py --strategy s075_residual_reversal --data-dir data/cache/daily_10years --variant baseline,big10`
-
-
 
 ### S076 | Twin-ETF Convergence (SPY/IVV/VOO)
 - family: pairs and spreads

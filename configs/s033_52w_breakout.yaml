@@ -1,0 +1,23 @@
+data_dir: data/cache/daily_10years_tr
+etf_data_dir: data/cache/etf_tr
+data_suffix: _1Day_tr.parquet
+ranks_dir: data/cache/liquid_ranks
+etf_symbols: SPY,QQQ,IWM,DIA,XLB,XLC,XLE,XLF,XLI,XLK,XLP,XLRE,XLU,XLV,XLY,TLT,IEF,GLD,EFA,EEM
+universe_top_n: 500
+include_stocks: true
+min_history: 260
+entry_window: 252       # 52-week closing high, inclusive
+exit_window: 126        # 26-week closing low, inclusive
+delisting_return: -0.30
+cost_bps_per_side: 10.0 # blended: 5 ETF / 15 stock
+fills: next_open,close
+partition_split_date: "2024-01-01"
+n_draws: 1000
+n_boot: 5000
+n_timing_draws: 500
+seed: 20261101
+book_slots: 50
+
+variants:
+  fast: {entry_window: 63, exit_window: 21}   # registered fast variant
+  etf_only: {include_stocks: false, book_slots: 20}

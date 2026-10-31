@@ -1,0 +1,24 @@
+data_dir: data/cache/etf_tr
+data_suffix: _1Day_tr.parquet
+symbols: SPY,QQQ,IWM,DIA,XLB,XLC,XLE,XLF,XLI,XLK,XLP,XLRE,XLU,XLV,XLY
+min_history: 250
+lookback: 7             # inclusive window: close <= min(close, lookback) at entry, close >= max at exit
+sma_window: 200
+disaster_stop_atr: 0.0  # 0 = off; else close < entry - mult x ATR(atr_len)
+atr_len: 14
+cost_bps_per_side: 5.0
+fills: next_open,close
+partition_split_date: "2024-01-01"
+n_draws: 1000
+n_boot: 5000
+n_timing_draws: 500
+seed: 20261101
+book_slots: 15
+
+variants:
+  lb5: {lookback: 5}
+  lb10: {lookback: 10}
+  spy_only: {symbols: SPY, book_slots: 1}
+  stop3atr: {disaster_stop_atr: 3.0}
+  lb5_spy: {lookback: 5, symbols: SPY, book_slots: 1}
+  lb10_stop: {lookback: 10, disaster_stop_atr: 3.0}

@@ -8,3 +8,4 @@
 - New strategies must plug into `src/framework`, include the partition test and timing instrumentation, and store golden outputs under `results/<name>/golden/`.
 - One off tools should be placed in the tools/ directory but only if it's likely to be used again. If it's just to move specific files around or other trivial tasks, delete after use.
 - Strategy variants: put named overlays in the strategy yaml `variants:` block and run `python run.py --strategy <name> --variant a,b`; variant outputs are `results/<name>/<variant>__<file>`, and `results/<name>/variants_comparison.csv` tracks every variant tried (count them as trials; select on dev only, report test once).
+- Plot the cumulative log returns of the benchmark such as SPY or QQQ alongside the strategy's cumulative log returns to visualize performance.
